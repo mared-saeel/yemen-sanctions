@@ -1,0 +1,25 @@
+{
+  "query": "SELECT COUNT(*) as total FROM sanctions_records; SELECT COUNT(*) as users FROM users; SELECT COUNT(*) as companies FROM companies;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT COUNT(*) as total FROM sanctions_records; SELECT COUNT(*) as users FROM users; SELECT COUNT(*) as companies FROM companies;",
+  "rows": [
+    {
+      "total": "39710"
+    },
+    {
+      "total": "users"
+    },
+    {
+      "total": "1"
+    },
+    {
+      "total": "companies"
+    },
+    {
+      "total": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\n39710\nusers\n1\ncompanies\n0\n",
+  "stderr": "",
+  "execution_time_ms": 550
+}
