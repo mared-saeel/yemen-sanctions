@@ -30,7 +30,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border">
@@ -72,7 +72,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
               {/* Primary Names */}
               <div className="space-y-3">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Primary Names</h3>
-                <div className="bg-secondary/50 rounded-lg p-4 space-y-2">
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2 border border-border">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-xs text-muted-foreground mb-0.5">English</div>
@@ -130,7 +130,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                     { label: "Date of Birth", value: record.dateOfBirth, icon: <Calendar size={13} /> },
                     { label: "Place of Birth", value: record.placeOfBirth, icon: <MapPin size={13} /> },
                   ].map((item) => item.value && (
-                    <div key={item.label} className="bg-secondary/30 rounded-lg p-3">
+                    <div key={item.label} className="bg-muted/40 rounded-lg p-3 border border-border/50">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
                         {item.icon}
                         {item.label}
@@ -154,7 +154,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                     { label: "Legal Basis", value: record.legalBasis },
                     { label: "Reference Number", value: record.referenceNumber },
                   ].map((item) => item.value && (
-                    <div key={item.label} className="bg-secondary/30 rounded-lg p-3">
+                    <div key={item.label} className="bg-muted/40 rounded-lg p-3 border border-border/50">
                       <div className="text-xs text-muted-foreground mb-1">{item.label}</div>
                       <div className="text-sm text-foreground font-medium">{item.value}</div>
                     </div>
@@ -169,7 +169,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                     <FileText size={12} />
                     Notes
                   </h3>
-                  <div className="bg-secondary/30 rounded-lg p-3 text-sm text-muted-foreground leading-relaxed">
+                  <div className="bg-muted/40 rounded-lg p-3 text-sm text-muted-foreground leading-relaxed border border-border/50">
                     {record.notes}
                   </div>
                 </div>

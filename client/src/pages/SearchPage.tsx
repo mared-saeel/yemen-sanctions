@@ -130,8 +130,8 @@ export default function SearchPage() {
     <AppLayout>
       <div className="flex h-full">
         {/* Left Sidebar - Filters */}
-        <aside className="w-64 flex-shrink-0 border-r border-border bg-card/50 flex flex-col overflow-y-auto hidden lg:flex">
-          <div className="p-4 border-b border-border">
+        <aside className="w-64 flex-shrink-0 border-r border-border bg-sidebar flex flex-col overflow-y-auto hidden lg:flex">
+          <div className="p-4 border-b border-sidebar-border">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Screening Settings</h3>
               {hasActiveFilters && (
@@ -145,11 +145,11 @@ export default function SearchPage() {
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Mode</div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2 px-3 py-2 rounded bg-primary/15 border-l-2 border-primary text-primary text-sm font-medium cursor-pointer">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer shadow-sm">
                   Single
                 </div>
                 <div
-                  className="flex items-center gap-2 px-3 py-2 rounded text-muted-foreground text-sm cursor-pointer hover:bg-secondary"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-muted-foreground text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
                   onClick={() => toast.info("Batch screening coming soon")}
                 >
                   Batch
@@ -168,10 +168,10 @@ export default function SearchPage() {
                     key={String(et.value)}
                     onClick={() => setEntityType(et.value as EntityType)}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-2 rounded text-sm cursor-pointer transition-colors",
+                      "flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition-all duration-150",
                       entityType === et.value
-                        ? "bg-primary/15 border-l-2 border-primary text-primary"
-                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        ? "bg-primary text-white font-semibold shadow-sm"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     )}
                   >
                     {et.icon}
@@ -186,7 +186,7 @@ export default function SearchPage() {
             {/* Check Types */}
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Check Types</div>
-              <div className="flex items-center justify-between px-3 py-2 rounded bg-secondary/50">
+              <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-accent/60 border border-border">
                 <div className="flex items-center gap-2 text-sm text-foreground">
                   <span>🌐</span> World-Check
                 </div>
@@ -202,7 +202,7 @@ export default function SearchPage() {
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">AI Enhancement</div>
               <div
-                className="flex items-center justify-between px-3 py-2 rounded bg-secondary/50 cursor-pointer"
+                className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-accent/60 border border-border cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => setEnableAI(!enableAI)}
               >
                 <div className="flex items-center gap-2 text-sm text-foreground">
@@ -230,7 +230,7 @@ export default function SearchPage() {
                     value={nationality}
                     onChange={(e) => setNationality(e.target.value)}
                     placeholder="e.g. IRAQ"
-                    className="h-8 text-xs bg-input border-border"
+                    className="h-8 text-xs bg-card border-border"
                   />
                 </div>
                 <div>
@@ -238,7 +238,7 @@ export default function SearchPage() {
                   <select
                     value={issuingBody}
                     onChange={(e) => setIssuingBody(e.target.value)}
-                    className="w-full h-8 text-xs bg-input border border-border rounded-md px-2 text-foreground"
+                    className="w-full h-8 text-xs bg-card border border-border rounded-md px-2 text-foreground"
                   >
                     <option value="">All Bodies</option>
                     {filterOptions.data?.issuingBodies.map((b) => (
@@ -252,7 +252,7 @@ export default function SearchPage() {
                     type="date"
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
-                    className="h-8 text-xs bg-input border-border"
+                    className="h-8 text-xs bg-card border-border"
                   />
                 </div>
                 <div>
@@ -261,7 +261,7 @@ export default function SearchPage() {
                     type="date"
                     value={dateTo}
                     onChange={(e) => setDateTo(e.target.value)}
-                    className="h-8 text-xs bg-input border-border"
+                    className="h-8 text-xs bg-card border-border"
                   />
                 </div>
               </div>
@@ -272,7 +272,7 @@ export default function SearchPage() {
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Search Header */}
-          <div className="p-6 border-b border-border bg-card/30">
+          <div className="p-6 border-b border-border bg-card">
             <div className="max-w-4xl">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
                 Single Screening
@@ -289,7 +289,7 @@ export default function SearchPage() {
                       onChange={(e) => setQuery(e.target.value)}
                       onKeyDown={handleKeyDown}
                       placeholder="Enter name to screen (Arabic or English)..."
-                      className="pl-9 h-11 bg-input border-border text-foreground placeholder:text-muted-foreground text-sm focus:ring-2 focus:ring-primary/40"
+                      className="pl-9 h-11 bg-background border-border text-foreground placeholder:text-muted-foreground text-sm focus-visible:ring-2 focus-visible:ring-primary/30 shadow-sm"
                     />
                     {query && (
                       <button
@@ -303,7 +303,7 @@ export default function SearchPage() {
                   <Button
                     onClick={() => handleSearch(0)}
                     disabled={searchMutation.isPending}
-                    className="h-11 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    className="h-11 px-8 bg-primary hover:bg-primary/90 text-primary-foreground font-bold tracking-wide shadow-sm"
                   >
                     {searchMutation.isPending ? (
                       <Loader2 size={16} className="animate-spin" />
@@ -373,7 +373,7 @@ export default function SearchPage() {
             {/* Empty State */}
             {!hasSearched && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
                   <Search size={28} className="text-primary" />
                 </div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">Start Screening</h3>
@@ -496,7 +496,7 @@ function ResultCard({
 
   return (
     <div
-      className="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-all duration-150 cursor-pointer group"
+      className="bg-card border border-border rounded-xl p-4 hover:border-primary/30 hover:shadow-md transition-all duration-200 cursor-pointer group"
       onClick={onView}
     >
       <div className="flex items-start justify-between gap-4">
@@ -529,7 +529,7 @@ function ResultCard({
               <span>🌍 {result.nationality}</span>
             )}
             {result.issuingBody && (
-              <span className="px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">
+              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20">
                 {result.issuingBody}
               </span>
             )}

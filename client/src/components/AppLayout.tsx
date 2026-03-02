@@ -11,12 +11,12 @@ import {
   Building2,
   FileText,
   LogOut,
-  Shield,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
   Bell,
   Menu,
-  X,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -26,14 +26,15 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  group?: string;
 }
 
 const navItems: NavItem[] = [
-  { label: "Screening", href: "/search", icon: <Search size={18} /> },
-  { label: "Admin Dashboard", href: "/admin", icon: <LayoutDashboard size={18} />, adminOnly: true },
-  { label: "Users", href: "/admin/users", icon: <Users size={18} />, adminOnly: true },
-  { label: "Companies", href: "/admin/companies", icon: <Building2 size={18} />, adminOnly: true },
-  { label: "Audit Logs", href: "/admin/audit-logs", icon: <FileText size={18} />, adminOnly: true },
+  { label: "Screening", href: "/search", icon: <Search size={16} /> },
+  { label: "Admin Dashboard", href: "/admin", icon: <LayoutDashboard size={16} />, adminOnly: true, group: "Administration" },
+  { label: "Users", href: "/admin/users", icon: <Users size={16} />, adminOnly: true, group: "Administration" },
+  { label: "Companies", href: "/admin/companies", icon: <Building2 size={16} />, adminOnly: true, group: "Administration" },
+  { label: "Audit Logs", href: "/admin/audit-logs", icon: <FileText size={16} />, adminOnly: true, group: "Administration" },
 ];
 
 interface AppLayoutProps {
@@ -45,6 +46,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const { user, isAuthenticated } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   const logout = trpc.auth.logout.useMutation({
     onSuccess: () => { window.location.href = "/"; },
   });
@@ -52,81 +55,115 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const isAdmin = user?.role === "admin";
   const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
 
+  // Group nav items
+  const mainNav = visibleNav.filter(i => !i.group);
+  const adminNav = visibleNav.filter(i => i.group === "Administration");
+
+  const currentPage = navItems.find((n) => {
+    if (n.href === "/search") return location === "/search" || location === "/";
+    return location.startsWith(n.href);
+  });
+
+  const NavLink = ({ item }: { item: NavItem }) => {
+    const isActive = item.href === "/search"
+      ? location === "/search" || location === "/"
+      : location === item.href || (item.href !== "/admin" && location.startsWith(item.href + "/"));
+
+    return (
+      <Link href={item.href}>
+        <div
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "nav-item",
+            isActive && "active",
+            collapsed && "justify-center px-2"
+          )}
+          title={collapsed ? item.label : undefined}
+        >
+          <span className="flex-shrink-0">{item.icon}</span>
+          {!collapsed && <span className="truncate">{item.label}</span>}
+        </div>
+      </Link>
+    );
+  };
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className={cn(
-        "flex items-center gap-3 px-4 py-4 border-b border-border",
-        collapsed && "justify-center px-2"
+        "flex items-center gap-3 px-5 py-5 border-b border-sidebar-border",
+        collapsed && "justify-center px-3"
       )}>
-        <div className="flex items-center justify-center w-8 h-8 rounded bg-primary">
-          <Shield size={16} className="text-primary-foreground" />
+        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary shadow-sm flex-shrink-0">
+          <ShieldCheck size={18} className="text-white" />
         </div>
         {!collapsed && (
           <div>
-            <div className="text-sm font-bold text-foreground leading-tight">SanctionCheck</div>
-            <div className="text-[10px] text-muted-foreground">Compliance Platform</div>
+            <div className="text-[15px] font-bold text-foreground leading-tight tracking-tight">
+              SanctionCheck
+            </div>
+            <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
+              Compliance Platform
+            </div>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {visibleNav.map((item) => {
-          const isActive = location === item.href || location.startsWith(item.href + "/");
-          return (
-            <Link key={item.href} href={item.href}>
-              <div
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-150 cursor-pointer group",
-                  isActive
-                    ? "bg-primary/15 text-primary border-l-2 border-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                  collapsed && "justify-center px-2"
-                )}
-              >
-                <span className={cn(isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}>
-                  {item.icon}
+      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        {/* Main nav */}
+        {mainNav.map((item) => <NavLink key={item.href} item={item} />)}
+
+        {/* Admin section */}
+        {adminNav.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="pt-4 pb-1 px-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                  Administration
                 </span>
-                {!collapsed && <span>{item.label}</span>}
               </div>
-            </Link>
-          );
-        })}
+            )}
+            {collapsed && <div className="my-2 border-t border-sidebar-border" />}
+            {adminNav.map((item) => <NavLink key={item.href} item={item} />)}
+          </>
+        )}
       </nav>
 
       {/* User info */}
       <div className={cn(
-        "border-t border-border p-3",
+        "border-t border-sidebar-border p-3",
         collapsed && "flex justify-center"
       )}>
         {!collapsed ? (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-semibold flex-shrink-0">
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}>
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm">
               {user?.name?.[0]?.toUpperCase() || "U"}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-foreground truncate">{user?.name || "User"}</div>
-              <div className="text-[10px] text-muted-foreground capitalize">{user?.role || "user"}</div>
+              <div className="text-xs font-semibold text-foreground truncate">{user?.name || "User"}</div>
+              <div className="text-[10px] text-muted-foreground capitalize font-medium">{user?.role || "user"}</div>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={() => logout.mutate()}
+              className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
+              onClick={(e) => { e.stopPropagation(); logout.mutate(); }}
+              title="Sign out"
             >
-              <LogOut size={14} />
+              <LogOut size={13} />
             </Button>
           </div>
         ) : (
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
             onClick={() => logout.mutate()}
+            title="Sign out"
           >
-            <LogOut size={16} />
+            <LogOut size={15} />
           </Button>
         )}
       </div>
@@ -138,26 +175,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          "hidden md:flex flex-col bg-card border-r border-border transition-all duration-300 flex-shrink-0",
-          collapsed ? "w-14" : "w-56"
+          "hidden md:flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 flex-shrink-0 relative",
+          collapsed ? "w-[60px]" : "w-[220px]"
         )}
       >
         <SidebarContent />
         {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 translate-x-full z-10 bg-card border border-border rounded-r-md p-1 text-muted-foreground hover:text-foreground transition-colors"
-          style={{ left: collapsed ? "3.5rem" : "14rem" }}
+          className="absolute -right-3 top-[72px] z-20 bg-card border border-border rounded-full p-1 text-muted-foreground hover:text-primary hover:border-primary/30 transition-all shadow-sm"
         >
-          {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+          {collapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
         </button>
       </aside>
 
       {/* Mobile Sidebar Overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-56 bg-card border-r border-border">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <aside className="absolute left-0 top-0 h-full w-[220px] bg-sidebar border-r border-sidebar-border shadow-xl">
             <SidebarContent />
           </aside>
         </div>
@@ -166,26 +202,37 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card flex-shrink-0">
+        <header className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-3">
             <button
-              className="md:hidden text-muted-foreground hover:text-foreground"
+              className="md:hidden text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-secondary transition-colors"
               onClick={() => setMobileOpen(true)}
             >
-              <Menu size={20} />
+              <Menu size={18} />
             </button>
-            <div className="text-sm font-semibold text-foreground">
-              {navItems.find((n) => location.startsWith(n.href))?.label || "SanctionCheck"}
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground font-medium">SanctionCheck</span>
+              {currentPage && (
+                <>
+                  <span className="text-border">/</span>
+                  <span className="font-semibold text-foreground">{currentPage.label}</span>
+                </>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-              <Bell size={16} />
+
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg">
+              <Bell size={15} />
             </Button>
             {isAuthenticated && user && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="hidden sm:inline">{user.name}</span>
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-semibold">
+              <div className="flex items-center gap-2 pl-2 ml-1 border-l border-border">
+                <div className="hidden sm:block text-right">
+                  <div className="text-xs font-semibold text-foreground leading-tight">{user.name}</div>
+                  <div className="text-[10px] text-muted-foreground capitalize">{user.role}</div>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shadow-sm">
                   {user.name?.[0]?.toUpperCase() || "U"}
                 </div>
               </div>

@@ -47,7 +47,7 @@ export default function AdminUsers() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border bg-secondary/30">
+                <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role</th>
@@ -59,7 +59,7 @@ export default function AdminUsers() {
               <tbody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="border-b border-border">
+                  <tr key={i} className="border-b border-border">
                       {Array.from({ length: 6 }).map((_, j) => (
                         <td key={j} className="px-4 py-3">
                           <div className="h-4 bg-secondary animate-pulse rounded w-24" />
@@ -68,10 +68,10 @@ export default function AdminUsers() {
                     </tr>
                   ))
                 ) : data?.users.map((u) => (
-                  <tr key={u.id} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                  <tr key={u.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm">
                           {u.name?.[0]?.toUpperCase() || "U"}
                         </div>
                         <span className="text-sm text-foreground font-medium">{u.name || "—"}</span>
@@ -81,7 +81,7 @@ export default function AdminUsers() {
                     <td className="px-4 py-3">
                       <Badge
                         variant={u.role === "admin" ? "default" : "secondary"}
-                        className={cn("text-xs", u.role === "admin" && "bg-primary/20 text-primary border-primary/30")}
+                        className={cn("text-xs font-medium", u.role === "admin" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-muted text-muted-foreground")}
                       >
                         {u.role === "admin" && <Shield size={10} className="mr-1" />}
                         {u.role}
@@ -93,8 +93,8 @@ export default function AdminUsers() {
                         className={cn(
                           "text-xs",
                           (u as any).isActive !== false
-                            ? "bg-green-500/10 text-green-400 border-green-500/20"
-                            : "bg-red-500/10 text-red-400 border-red-500/20"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-red-50 text-red-700 border-red-200"
                         )}
                       >
                         {(u as any).isActive !== false ? "Active" : "Inactive"}

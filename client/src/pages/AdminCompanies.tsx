@@ -63,27 +63,27 @@ export default function AdminCompanies() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Company Name (EN) *</label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Company name" className="h-9 text-sm bg-input border-border" />
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Company name" className="h-9 text-sm bg-background border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Company Name (AR)</label>
-                <Input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} placeholder="اسم الشركة" dir="rtl" className="h-9 text-sm bg-input border-border" />
+                <Input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} placeholder="اسم الشركة" dir="rtl" className="h-9 text-sm bg-background border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">License Number</label>
-                <Input value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder="License #" className="h-9 text-sm bg-input border-border" />
+                <Input value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder="License #" className="h-9 text-sm bg-background border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Country</label>
-                <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} placeholder="Country" className="h-9 text-sm bg-input border-border" />
+                <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} placeholder="Country" className="h-9 text-sm bg-background border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Contact Email</label>
-                <Input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} placeholder="email@company.com" className="h-9 text-sm bg-input border-border" />
+                <Input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} placeholder="email@company.com" className="h-9 text-sm bg-background border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Max Users</label>
-                <Input type="number" value={form.maxUsers} onChange={(e) => setForm({ ...form, maxUsers: parseInt(e.target.value) || 10 })} className="h-9 text-sm bg-input border-border" />
+                <Input type="number" value={form.maxUsers} onChange={(e) => setForm({ ...form, maxUsers: parseInt(e.target.value) || 10 })} className="h-9 text-sm bg-background border-border" />
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -105,7 +105,7 @@ export default function AdminCompanies() {
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-border bg-secondary/30">
+              <tr className="border-b border-border bg-muted/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Company</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">License</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Country</th>
@@ -131,7 +131,7 @@ export default function AdminCompanies() {
                   </td>
                 </tr>
               ) : companies?.map((company) => (
-                <tr key={company.id} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                <tr key={company.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3">
                     <div>
                       <div className="text-sm font-medium text-foreground">{company.name}</div>
@@ -147,8 +147,8 @@ export default function AdminCompanies() {
                       className={cn(
                         "text-xs",
                         company.isActive
-                          ? "bg-green-500/10 text-green-400 border-green-500/20"
-                          : "bg-red-500/10 text-red-400 border-red-500/20"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-red-50 text-red-700 border-red-200"
                       )}
                     >
                       {company.isActive ? "Active" : "Inactive"}

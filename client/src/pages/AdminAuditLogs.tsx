@@ -7,10 +7,10 @@ import { FileText, Search, Download, Eye, ChevronLeft, ChevronRight } from "luci
 import { cn } from "@/lib/utils";
 
 const ACTION_COLORS: Record<string, string> = {
-  search: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  view: "bg-green-500/10 text-green-400 border-green-500/20",
-  export: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-  login: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  search: "bg-blue-50 text-blue-700 border-blue-200",
+  view: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  export: "bg-amber-50 text-amber-700 border-amber-200",
+  login: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -49,7 +49,7 @@ export default function AdminAuditLogs() {
             <select
               value={filterAction}
               onChange={(e) => { setFilterAction(e.target.value); setPage(1); }}
-              className="h-8 text-xs bg-input border border-border rounded-md px-2 text-foreground"
+              className="h-8 text-xs bg-card border border-border rounded-md px-2 text-foreground"
             >
               <option value="">All Actions</option>
               <option value="search">Search</option>
@@ -64,7 +64,7 @@ export default function AdminAuditLogs() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border bg-secondary/30">
+                <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Time</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Action</th>
@@ -77,7 +77,7 @@ export default function AdminAuditLogs() {
               <tbody>
                 {isLoading ? (
                   Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i} className="border-b border-border">
+                  <tr key={i} className="border-b border-border">
                       {Array.from({ length: 7 }).map((_, j) => (
                         <td key={j} className="px-4 py-3"><div className="h-4 bg-secondary animate-pulse rounded w-20" /></td>
                       ))}
@@ -90,7 +90,7 @@ export default function AdminAuditLogs() {
                     </td>
                   </tr>
                 ) : data?.logs.map((log) => (
-                  <tr key={log.id} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                  <tr key={log.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(log.createdAt).toLocaleString()}
                     </td>
@@ -117,8 +117,8 @@ export default function AdminAuditLogs() {
                       {log.topMatchScore !== null ? (
                         <span className={cn(
                           "text-xs font-semibold",
-                          log.topMatchScore >= 85 ? "text-green-400" :
-                          log.topMatchScore >= 60 ? "text-yellow-400" : "text-red-400"
+                          log.topMatchScore >= 85 ? "text-emerald-600" :
+                          log.topMatchScore >= 60 ? "text-amber-600" : "text-red-600"
                         )}>
                           {log.topMatchScore}%
                         </span>
