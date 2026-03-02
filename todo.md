@@ -44,3 +44,10 @@
 - [x] Update Admin pages with new white theme
 - [x] Update RecordModal with new design
 - [x] Test and verify all pages look correct
+
+## Phase 7: Logo & Branding
+- [x] Upload Almustashar logo to CDN
+- [x] Remove "World-Check" text from all UI components
+- [x] Add logo to sidebar in AppLayout
+- [x] Add logo to SearchPage header/check types section
+- [x] Save checkpoint and deliver

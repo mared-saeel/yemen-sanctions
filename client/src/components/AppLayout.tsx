@@ -11,12 +11,10 @@ import {
   Building2,
   FileText,
   LogOut,
-  ShieldCheck,
   ChevronLeft,
   ChevronRight,
   Bell,
   Menu,
-  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -90,21 +88,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className={cn(
-        "flex items-center gap-3 px-5 py-5 border-b border-sidebar-border",
-        collapsed && "justify-center px-3"
+        <div className={cn(
+        "flex items-center gap-2 px-4 py-4 border-b border-sidebar-border",
+        collapsed && "justify-center px-2"
       )}>
-        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary shadow-sm flex-shrink-0">
-          <ShieldCheck size={18} className="text-white" />
-        </div>
-        {!collapsed && (
-          <div>
-            <div className="text-[15px] font-bold text-foreground leading-tight tracking-tight">
-              SanctionCheck
-            </div>
-            <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
-              Compliance Platform
-            </div>
+        {!collapsed ? (
+          <div className="flex items-center justify-center w-full py-1">
+            <img
+              src="https://private-us-east-1.manuscdn.com/user_upload_by_module/session_file/310519663202837783/VEZYpFzPPlUnNXXB.png?Expires=1803987046&Signature=dSkdEkym0CnCrZ~xvHutowDJvaXvfh1IYw0fGrbQwWaAjL5vmswDwRF9-TfTOh4xH2P2YcrXfjAFiQEXpzpyJ2mqD~wqvBlPtta~nzxh~YHN1GaX33XlFKB-QK6Itc1~EgF3UTZlpRjoh7HmuR63-HoVVdbNXHhjMKtREACYojEsDOCBjCNg3EXLc2CmNt6~EztnE0p9uCZUuJ~JbxGil38c-4Y7yMm7sR3PqqnZKS5LoBot0KoQhuy1r63lSwudqL-6fHPYJBZfN3I9OHLYH5ez7NVfKDC26lKQ-z5kcKIB-LbwVUzb57AKcXIopP8YdmPNF4kmrI1jt1qTN21iKw__&Key-Pair-Id=K2HSFNDJXOU9YS"
+              alt="المستشار للاستشارات القانونية"
+              className="w-full max-w-[160px] h-auto object-contain"
+            />
+          </div>
+        ) : (
+          <div className="w-9 h-9 rounded-lg overflow-hidden border border-border flex items-center justify-center bg-white">
+            <img
+              src="https://private-us-east-1.manuscdn.com/user_upload_by_module/session_file/310519663202837783/VEZYpFzPPlUnNXXB.png?Expires=1803987046&Signature=dSkdEkym0CnCrZ~xvHutowDJvaXvfh1IYw0fGrbQwWaAjL5vmswDwRF9-TfTOh4xH2P2YcrXfjAFiQEXpzpyJ2mqD~wqvBlPtta~nzxh~YHN1GaX33XlFKB-QK6Itc1~EgF3UTZlpRjoh7HmuR63-HoVVdbNXHhjMKtREACYojEsDOCBjCNg3EXLc2CmNt6~EztnE0p9uCZUuJ~JbxGil38c-4Y7yMm7sR3PqqnZKS5LoBot0KoQhuy1r63lSwudqL-6fHPYJBZfN3I9OHLYH5ez7NVfKDC26lKQ-z5kcKIB-LbwVUzb57AKcXIopP8YdmPNF4kmrI1jt1qTN21iKw__&Key-Pair-Id=K2HSFNDJXOU9YS"
+              alt="Logo"
+              className="w-full h-full object-contain p-0.5"
+            />
           </div>
         )}
       </div>
