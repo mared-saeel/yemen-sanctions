@@ -61,3 +61,9 @@
 - [x] Update AdminUsers page with create/edit user modal
 - [x] Write vitest tests for auth (24/24 passed)
 - [x] Save checkpoint and deliver
+
+## Phase 9: Fix Sign In Redirect
+- [ ] Fix Sign In button in Home page to redirect to /login instead of Manus OAuth
+- [ ] Fix AppLayout Sign In link to redirect to /login
+- [ ] Ensure all auth redirects bypass OAuth and go directly to password login
+- [ ] Save checkpoint and deliver

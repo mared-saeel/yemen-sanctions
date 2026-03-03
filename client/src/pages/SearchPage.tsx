@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -116,14 +115,8 @@ export default function SearchPage() {
   const hasActiveFilters = entityType || nationality || issuingBody || listingReason || dateFrom || dateTo;
 
   if (!loading && !isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <p className="text-muted-foreground">Please sign in to access screening</p>
-          <Button onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
-        </div>
-      </div>
-    );
+    window.location.replace("/login");
+    return null;
   }
 
   return (

@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, Search, Zap, Globe, Lock, ChevronRight, BarChart3, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
@@ -41,7 +40,7 @@ export default function Home() {
             </div>
           </div>
           <Button
-            onClick={() => window.location.href = getLoginUrl()}
+            onClick={() => window.location.href = "/login"}
             className="bg-primary hover:bg-primary/90 text-white font-semibold shadow-sm"
             size="sm"
           >
@@ -83,7 +82,7 @@ export default function Home() {
             {/* CTA */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
               <Button
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => window.location.href = "/login"}
                 size="lg"
                 className="bg-primary hover:bg-primary/90 text-white px-10 py-3 text-base font-bold shadow-md hover:shadow-lg transition-all"
               >
@@ -94,7 +93,7 @@ export default function Home() {
                 variant="outline"
                 size="lg"
                 className="border-border bg-white text-foreground hover:bg-muted/50 px-8 py-3 text-base font-medium shadow-sm"
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => window.location.href = "/login"}
               >
                 Request Demo
                 <ArrowRight size={16} className="ml-2" />
