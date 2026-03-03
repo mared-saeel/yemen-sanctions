@@ -12,11 +12,13 @@ import AdminUsers from "./pages/AdminUsers";
 import AdminCompanies from "./pages/AdminCompanies";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
 import AppLayout from "./components/AppLayout";
+import LoginPage from "./pages/LoginPage";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/login" component={LoginPage} />
       <Route path="/search" component={SearchPage} />
       <Route path="/record/:id" component={RecordDetail} />
       <Route path="/admin" component={AdminDashboard} />

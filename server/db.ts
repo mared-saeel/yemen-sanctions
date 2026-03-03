@@ -1,4 +1,4 @@
-import { eq, desc, and, like, sql, count } from "drizzle-orm";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, companies, auditLogs, sanctionsRecords, InsertAuditLog, InsertCompany } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -77,6 +77,56 @@ export async function updateUserRole(userId: number, role: "user" | "admin") {
   const db = await getDb();
   if (!db) return;
   await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createLocalUser(data: {
+  username: string;
+  passwordHash: string;
+  name: string;
+  role: "user" | "admin";
+  companyId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // openId for local users: local_{username}
+  const openId = `local_${data.username}`;
+  const result = await db.insert(users).values({
+    openId,
+    username: data.username,
+    passwordHash: data.passwordHash,
+    name: data.name,
+    role: data.role,
+    companyId: data.companyId ?? null,
+    loginMethod: "local",
+    isActive: true,
+    lastSignedIn: new Date(),
+  });
+  return result;
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+}
+
+export async function deleteUser(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ isActive: false }).where(eq(users.id, userId));
+}
+
+export async function updateUserLastSignIn(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, userId));
 }
 
 // ─── Companies ────────────────────────────────────────────────────────────────

@@ -15,6 +15,13 @@
       "when": 1772446390344,
       "tag": "0001_boring_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1772523018751,
+      "tag": "0002_parched_sersi",
+      "breakpoints": true
     }
   ]
 }

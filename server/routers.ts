@@ -15,7 +15,13 @@ import {
   createAuditLog,
   getDashboardStats,
   getDb,
+  getUserByUsername,
+  createLocalUser,
+  updateUserPassword,
+  deleteUser,
+  updateUserLastSignIn,
 } from "./db";
+import bcrypt from "bcryptjs";
 import { searchSanctions, aiEnhancedSearch, getRecordById, getFilterOptions } from "./search-engine";
 import { sanctionsRecords } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -35,6 +41,42 @@ export const appRouter = router({
   // ─── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+
+    // Login with username + password
+    loginWithPassword: publicProcedure
+      .input(z.object({
+        username: z.string().min(1).max(100),
+        password: z.string().min(1).max(255),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await getUserByUsername(input.username.toLowerCase().trim());
+        if (!user || !user.passwordHash) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password" });
+        }
+        if (!user.isActive) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Account is disabled" });
+        }
+        const isValid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!isValid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password" });
+        }
+        // Create session token using the SDK
+        const { sdk } = await import("./_core/sdk");
+        const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.username ?? "" });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+        await updateUserLastSignIn(user.id);
+        await createAuditLog({
+          userId: user.id,
+          companyId: user.companyId ?? undefined,
+          userName: user.name ?? user.username ?? undefined,
+          action: "login",
+          ipAddress: ctx.req.headers["x-forwarded-for"] as string ?? "unknown",
+          userAgent: ctx.req.headers["user-agent"] ?? "unknown",
+        });
+        return { success: true, user: { id: user.id, name: user.name, role: user.role } };
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -158,6 +200,49 @@ export const appRouter = router({
         .input(z.object({ userId: z.number(), role: z.enum(["user", "admin"]) }))
         .mutation(async ({ input }) => {
           await updateUserRole(input.userId, input.role);
+          return { success: true };
+        }),
+
+      create: adminProcedure
+        .input(z.object({
+          username: z.string().min(3).max(50).regex(/^[a-zA-Z0-9_]+$/, "Username must be alphanumeric"),
+          password: z.string().min(6).max(100),
+          name: z.string().min(1).max(255),
+          role: z.enum(["user", "admin"]).default("user"),
+          companyId: z.number().optional(),
+        }))
+        .mutation(async ({ input }) => {
+          // Check if username already exists
+          const existing = await getUserByUsername(input.username.toLowerCase());
+          if (existing) {
+            throw new TRPCError({ code: "CONFLICT", message: "Username already exists" });
+          }
+          const passwordHash = await bcrypt.hash(input.password, 12);
+          await createLocalUser({
+            username: input.username.toLowerCase(),
+            passwordHash,
+            name: input.name,
+            role: input.role,
+            companyId: input.companyId,
+          });
+          return { success: true };
+        }),
+
+      changePassword: adminProcedure
+        .input(z.object({
+          userId: z.number(),
+          newPassword: z.string().min(6).max(100),
+        }))
+        .mutation(async ({ input }) => {
+          const passwordHash = await bcrypt.hash(input.newPassword, 12);
+          await updateUserPassword(input.userId, passwordHash);
+          return { success: true };
+        }),
+
+      delete: adminProcedure
+        .input(z.object({ userId: z.number() }))
+        .mutation(async ({ input }) => {
+          await deleteUser(input.userId);
           return { success: true };
         }),
     }),

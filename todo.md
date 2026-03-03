@@ -51,3 +51,13 @@
 - [x] Add logo to sidebar in AppLayout
 - [x] Add logo to SearchPage header/check types section
 - [x] Save checkpoint and deliver
+
+## Phase 8: Password Authentication System
+- [x] Add passwordHash and username fields to users table in schema
+- [x] Add password-based login API (POST /api/auth/login)
+- [x] Add create user API for admins (with username + password)
+- [x] Add change password API
+- [x] Build login page with username/password form
+- [x] Update AdminUsers page with create/edit user modal
+- [x] Write vitest tests for auth (24/24 passed)
+- [x] Save checkpoint and deliver
