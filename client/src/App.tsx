@@ -11,6 +11,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminUsers from "./pages/AdminUsers";
 import AdminCompanies from "./pages/AdminCompanies";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
+import ImportData from "./pages/ImportData";
 import AppLayout from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
 
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/admin/users" component={AdminUsers} />
       <Route path="/admin/companies" component={AdminCompanies} />
       <Route path="/admin/audit-logs" component={AdminAuditLogs} />
+      <Route path="/admin/import-data" component={ImportData} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

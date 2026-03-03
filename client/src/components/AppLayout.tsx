@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Bell,
   Menu,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { label: "Users", href: "/admin/users", icon: <Users size={16} />, adminOnly: true, group: "Administration" },
   { label: "Companies", href: "/admin/companies", icon: <Building2 size={16} />, adminOnly: true, group: "Administration" },
   { label: "Audit Logs", href: "/admin/audit-logs", icon: <FileText size={16} />, adminOnly: true, group: "Administration" },
+  { label: "Import Data", href: "/admin/import-data", icon: <Upload size={16} />, adminOnly: true, group: "Administration" },
 ];
 
 interface AppLayoutProps {

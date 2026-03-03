@@ -2,12 +2,14 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import multer from "multer";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerChatRoutes } from "./chat";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { handleImportSanctions, handleGetImportLogs } from "../import-handler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +40,25 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Chat API with streaming and tool calling
   registerChatRoutes(app);
+  // ─── Excel Import Endpoint ───────────────────────────────────────────────────
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+  // Auth middleware for import routes
+  const requireAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
+      if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
+      if (ctx.user.role !== "admin") return res.status(403).json({ error: "Admin access required" });
+      (req as express.Request & { user: typeof ctx.user }).user = ctx.user;
+      next();
+    } catch {
+      res.status(401).json({ error: "Unauthorized" });
+    }
+  };
+
+  app.post("/api/admin/import-sanctions", requireAdmin, upload.single("file"), handleImportSanctions);
+  app.get("/api/admin/import-logs", requireAdmin, handleGetImportLogs);
+
   // tRPC API
   app.use(
     "/api/trpc",

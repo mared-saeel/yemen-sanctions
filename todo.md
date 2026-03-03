@@ -69,10 +69,18 @@
 - [x] Save checkpoint and deliver
 
 ## Phase 10: Golden Brand Colors
-- [ ] Update CSS --primary variable to golden color (#C17F3E)
-- [ ] Update sidebar active nav item to golden
-- [ ] Update SCREEN button and all primary buttons to golden
-- [ ] Update login page accent to golden
-- [ ] Update badges and highlights to golden
-- [ ] Test all pages visually
-- [ ] Save checkpoint and deliver
+- [x] Update CSS --primary variable to golden color (#C17F3E)
+- [x] Update sidebar active nav item to golden
+- [x] Update SCREEN button and all primary buttons to golden
+- [x] Update login page accent to golden
+- [x] Update badges and highlights to golden
+- [x] Test all pages visually
+- [x] Save checkpoint and deliver
+
+## Phase 11: Excel Import from Admin Panel
+- [x] Build Express multipart endpoint for Excel file upload (/api/admin/import-sanctions)
+- [x] Write Excel parsing and DB insert logic (append mode + replace mode)
+- [x] Add import_logs table to track import history
+- [x] Build ImportData page in admin panel
+- [x] Add "Import Data" link in sidebar navigation
+- [ ] Test feature and save checkpoint

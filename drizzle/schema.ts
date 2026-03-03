@@ -135,6 +135,25 @@ export const auditLogs = mysqlTable(
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
 
+// ─── Import Logs ──────────────────────────────────────────────────────────────
+export const importLogs = mysqlTable("import_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  userName: varchar("userName", { length: 255 }),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  importMode: mysqlEnum("importMode", ["append", "replace"]).notNull().default("append"),
+  status: mysqlEnum("status", ["pending", "processing", "completed", "failed"]).notNull().default("pending"),
+  totalRows: int("totalRows"),
+  importedRows: int("importedRows"),
+  skippedRows: int("skippedRows"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type ImportLog = typeof importLogs.$inferSelect;
+export type InsertImportLog = typeof importLogs.$inferInsert;
+
 // ─── Search Sessions ──────────────────────────────────────────────────────────
 export const searchSessions = mysqlTable("search_sessions", {
   id: int("id").autoincrement().primaryKey(),
