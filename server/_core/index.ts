@@ -10,6 +10,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleImportSanctions, handleGetImportLogs } from "../import-handler";
+import { handleGeneratePdfReport } from "../pdf-report";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -58,6 +59,9 @@ async function startServer() {
 
   app.post("/api/admin/import-sanctions", requireAdmin, upload.single("file"), handleImportSanctions);
   app.get("/api/admin/import-logs", requireAdmin, handleGetImportLogs);
+
+  // PDF Report (any authenticated user)
+  app.get("/api/report/sanctions/:id", handleGeneratePdfReport);
 
   // tRPC API
   app.use(

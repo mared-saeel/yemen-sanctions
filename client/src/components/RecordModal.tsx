@@ -4,8 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   X, User, Building2, Ship, HelpCircle, Calendar, Globe,
-  MapPin, FileText, Hash, AlertTriangle, Copy, ExternalLink
+  MapPin, FileText, Hash, AlertTriangle, Copy, ExternalLink, Download
 } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -17,9 +18,36 @@ interface RecordModalProps {
 export default function RecordModal({ recordId, onClose }: RecordModalProps) {
   const { data: record, isLoading } = trpc.search.getRecord.useQuery({ id: recordId });
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard`);
+  };
+
+  const downloadReport = async () => {
+    if (!record) return;
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`/api/report/sanctions/${recordId}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "فشل تحميل التقرير");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sanctions-report-${record.referenceNumber || recordId}-${Date.now()}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("تم تحميل التقرير بنجاح");
+    } catch {
+      toast.error("حدث خطأ أثناء تحميل التقرير");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const entityIcon =
@@ -190,14 +218,36 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
               Close
             </Button>
             {record && (
-              <Button
-                size="sm"
-                className="bg-primary hover:bg-primary/90"
-                onClick={() => copyToClipboard(JSON.stringify(record, null, 2), "Record data")}
-              >
-                <Copy size={13} className="mr-1.5" />
-                Copy Data
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border"
+                  onClick={() => copyToClipboard(JSON.stringify(record, null, 2), "Record data")}
+                >
+                  <Copy size={13} className="mr-1.5" />
+                  Copy Data
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={isDownloading}
+                  onClick={downloadReport}
+                  className="text-white font-semibold"
+                  style={{ background: isDownloading ? "#999" : "linear-gradient(135deg, #C17F3E, #a06830)" }}
+                >
+                  {isDownloading ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />
+                      جاري التحميل...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={13} className="mr-1.5" />
+                      تنزيل التقرير
+                    </>
+                  )}
+                </Button>
+              </>
             )}
           </div>
         </div>
