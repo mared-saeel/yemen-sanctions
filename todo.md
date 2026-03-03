@@ -91,3 +91,10 @@
 - [x] Design professional PDF layout with logo, record details, legal disclaimer
 - [x] Add "Download Report" button in RecordModal footer
 - [x] Test and save checkpoint
+
+## Phase 13: Fix Search - English Name Not Matching
+- [x] Analyze search engine code to find root cause
+- [x] Fix search to give equal weight to nameEn and nameAr
+- [x] Ensure exact match on English name returns 100% score
+- [x] Test with "DREW PROPERTIES CO. LTD." and verify it returns exact match
+- [x] Save checkpoint

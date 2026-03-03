@@ -113,36 +113,46 @@ function scoreRecord(
   record: typeof sanctionsRecords.$inferSelect
 ): { score: number; matchType: SearchResult["matchType"] } {
   const nQuery = normalize(query);
+  // Also normalize with raw lowercase for English (no special char removal)
+  const rawQuery = query.toLowerCase().trim();
   const nNameEn = normalize(record.nameEn || "");
+  const rawNameEn = (record.nameEn || "").toLowerCase().trim();
   const nNameAr = normalize(record.nameAr || "");
   const altNames = (record.alternativeNames as string[] | null) || [];
   const nAltNames = altNames.map((n) => normalize(n));
+  const rawAltNames = altNames.map((n) => n.toLowerCase().trim());
 
-  // 1. Exact match (highest priority)
-  if (nNameEn === nQuery || nNameAr === nQuery) {
+  // 1. Exact match (highest priority) - both normalized and raw
+  if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery) {
     return { score: 1.0, matchType: "exact" };
   }
-  if (nAltNames.some((n) => n === nQuery)) {
+  if (nAltNames.some((n) => n === nQuery) || rawAltNames.some((n) => n === rawQuery)) {
     return { score: 0.98, matchType: "exact" };
   }
 
-  // 2. Contains match
-  if (nNameEn.includes(nQuery) || nNameAr.includes(nQuery)) {
+  // 2. Contains match - both normalized and raw
+  if (nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery)) {
     return { score: 0.92, matchType: "exact" };
   }
-  if (nAltNames.some((n) => n.includes(nQuery))) {
+  if (nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery))) {
     return { score: 0.88, matchType: "exact" };
   }
 
-  // 3. Token-based similarity
-  const enTokenScore = tokenSimilarity(query, record.nameEn || "");
+  // 3. Token-based similarity (use both raw and normalized)
+  const enTokenScore = Math.max(
+    tokenSimilarity(query, record.nameEn || ""),
+    tokenSimilarity(rawQuery, rawNameEn)
+  );
   const arTokenScore = tokenSimilarity(query, record.nameAr || "");
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
 
   const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore);
 
-  // 4. Full Levenshtein on full name
-  const levEn = levenshteinSimilarity(nQuery, nNameEn);
+  // 4. Full Levenshtein on full name (both normalized and raw)
+  const levEn = Math.max(
+    levenshteinSimilarity(nQuery, nNameEn),
+    levenshteinSimilarity(rawQuery, rawNameEn)
+  );
   const levAr = levenshteinSimilarity(nQuery, nNameAr);
   const levScore = Math.max(levEn, levAr);
 
@@ -201,17 +211,39 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   }
 
   // Step 1: Fast DB pre-filter using LIKE for candidate retrieval
-  const searchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
-  const likeConditions = searchTerms.flatMap((term) => [
+  // Use both normalized query tokens AND original query tokens to maximize recall
+  const nSearchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
+  // Also use original (non-normalized) terms for English queries
+  const rawTerms = trimmedQuery
+    .toLowerCase()
+    .split(/[\s.,;:!?()\[\]{}'"]+/)
+    .filter((t) => t.length >= 2);
+  // Combine both sets, deduplicate
+  const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms]));
+
+  // For short queries (1-2 meaningful words), also try the full query as a phrase
+  const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of'].includes(t));
+  const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
+
+  const likeConditions = termsToSearch.flatMap((term) => [
     like(sanctionsRecords.nameEn, `%${term}%`),
     like(sanctionsRecords.nameAr, `%${term}%`),
     like(sanctionsRecords.searchIndex, `%${term}%`),
   ]);
 
+  // Also add a full-phrase LIKE for the original query (handles exact company names)
+  const fullPhraseLike = [
+    like(sanctionsRecords.nameEn, `%${trimmedQuery}%`),
+    like(sanctionsRecords.nameAr, `%${trimmedQuery}%`),
+    like(sanctionsRecords.searchIndex, `%${trimmedQuery}%`),
+  ];
+
+  const allLikeConditions = [...likeConditions, ...fullPhraseLike];
+
   const whereClause =
     conditions.length > 0
-      ? and(...conditions, or(...likeConditions))
-      : or(...likeConditions);
+      ? and(...conditions, or(...allLikeConditions))
+      : or(...allLikeConditions);
 
   // Fetch candidates (max 2000 for scoring)
   const candidates = await db

@@ -1,0 +1,30 @@
+{
+  "query": "SELECT id, nameEn, nameAr FROM sanctions_records WHERE nameEn LIKE '%DREW PROPERTIES%' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, nameEn, nameAr FROM sanctions_records WHERE nameEn LIKE '%DREW PROPERTIES%' LIMIT 5;",
+  "rows": [
+    {
+      "id": "77938",
+      "nameEn": "DREW PROPERTIES PTE. LTD.",
+      "nameAr": "شركة درو بروبرتيز بي تي إي المحدودة"
+    },
+    {
+      "id": "77939",
+      "nameEn": "DREW PROPERTIES CO. LTD.",
+      "nameAr": "شركة درو بروبرتيز المحدودة"
+    },
+    {
+      "id": "77940",
+      "nameEn": "DREW PROPERTIES II PTE. LTD.",
+      "nameAr": "شركة درو بروبرتيز الثانية بي تي إي المحدودة"
+    },
+    {
+      "id": "77941",
+      "nameEn": "DREW PROPERTIES II CO. LTD.",
+      "nameAr": "شركة درو بروبرتيز الثانية المحدودة"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnameEn\tnameAr\n77938\tDREW PROPERTIES PTE. LTD.\tشركة درو بروبرتيز بي تي إي المحدودة\n77939\tDREW PROPERTIES CO. LTD.\tشركة درو بروبرتيز المحدودة\n77940\tDREW PROPERTIES II PTE. LTD.\tشركة درو بروبرتيز الثانية بي تي إي المحدودة\n77941\tDREW PROPERTIES II CO. LTD.\tشركة درو بروبرتيز الثانية المحدودة\n",
+  "stderr": "",
+  "execution_time_ms": 398
+}

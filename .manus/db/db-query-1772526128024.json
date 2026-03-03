@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, nameEn, nameAr, searchIndex FROM sanctions_records WHERE nameEn LIKE '%DREW PROPERTIES%' LIMIT 2;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, nameEn, nameAr, searchIndex FROM sanctions_records WHERE nameEn LIKE '%DREW PROPERTIES%' LIMIT 2;",
+  "rows": [
+    {
+      "id": "77938",
+      "nameEn": "DREW PROPERTIES PTE. LTD.",
+      "nameAr": "شركة درو بروبرتيز بي تي إي المحدودة",
+      "searchIndex": "drew properties pte. ltd. شركة درو بروبرتيز بي تي إي المحدودة    tco (منظمة إجرامية عابرة للحدود)"
+    },
+    {
+      "id": "77939",
+      "nameEn": "DREW PROPERTIES CO. LTD.",
+      "nameAr": "شركة درو بروبرتيز المحدودة",
+      "searchIndex": "drew properties co. ltd. شركة درو بروبرتيز المحدودة    tco (منظمة إجرامية عابرة للحدود)"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnameEn\tnameAr\tsearchIndex\n77938\tDREW PROPERTIES PTE. LTD.\tشركة درو بروبرتيز بي تي إي المحدودة\tdrew properties pte. ltd. شركة درو بروبرتيز بي تي إي المحدودة    tco (منظمة إجرامية عابرة للحدود)\n77939\tDREW PROPERTIES CO. LTD.\tشركة درو بروبرتيز المحدودة\tdrew properties co. ltd. شركة درو بروبرتيز المحدودة    tco (منظمة إجرامية عابرة للحدود)\n",
+  "stderr": "",
+  "execution_time_ms": 390
+}
