@@ -51,9 +51,9 @@
 :root {
   --radius: 0.5rem;
 
-  /* Brand: Deep Navy Blue */
-  --primary: oklch(0.38 0.16 255);
-  --primary-foreground: oklch(0.99 0.005 255);
+  /* Brand: Almustashar Golden */
+  --primary: oklch(0.62 0.12 65);
+  --primary-foreground: oklch(0.99 0.005 65);
 
   /* Backgrounds */
   --background: oklch(0.975 0.003 240);
@@ -75,9 +75,9 @@
   --muted: oklch(0.96 0.004 240);
   --muted-foreground: oklch(0.52 0.02 255);
 
-  /* Accent: Soft blue-teal for highlights */
-  --accent: oklch(0.93 0.04 220);
-  --accent-foreground: oklch(0.30 0.12 220);
+  /* Accent: Soft golden for highlights */
+  --accent: oklch(0.95 0.04 65);
+  --accent-foreground: oklch(0.45 0.12 65);
 
   /* Destructive */
   --destructive: oklch(0.55 0.22 25);
@@ -86,24 +86,24 @@
   /* Borders & Inputs */
   --border: oklch(0.88 0.008 240);
   --input: oklch(0.92 0.006 240);
-  --ring: oklch(0.38 0.16 255);
+  --ring: oklch(0.62 0.12 65);
 
   /* Charts */
-  --chart-1: oklch(0.38 0.16 255);
+  --chart-1: oklch(0.62 0.12 65);
   --chart-2: oklch(0.55 0.15 175);
   --chart-3: oklch(0.65 0.18 60);
   --chart-4: oklch(0.55 0.22 25);
   --chart-5: oklch(0.60 0.18 300);
 
-  /* Sidebar: Clean white with subtle blue tint */
-  --sidebar: oklch(0.99 0.004 255);
-  --sidebar-foreground: oklch(0.18 0.02 255);
-  --sidebar-primary: oklch(0.38 0.16 255);
-  --sidebar-primary-foreground: oklch(0.99 0.005 255);
-  --sidebar-accent: oklch(0.93 0.04 220);
-  --sidebar-accent-foreground: oklch(0.30 0.12 220);
-  --sidebar-border: oklch(0.90 0.008 240);
-  --sidebar-ring: oklch(0.38 0.16 255);
+  /* Sidebar: Clean white with subtle golden tint */
+  --sidebar: oklch(0.99 0.004 65);
+  --sidebar-foreground: oklch(0.18 0.02 40);
+  --sidebar-primary: oklch(0.62 0.12 65);
+  --sidebar-primary-foreground: oklch(0.99 0.005 65);
+  --sidebar-accent: oklch(0.95 0.04 65);
+  --sidebar-accent-foreground: oklch(0.45 0.12 65);
+  --sidebar-border: oklch(0.90 0.008 65);
+  --sidebar-ring: oklch(0.62 0.12 65);
 }
 
 .dark {
@@ -235,14 +235,14 @@
   /* ─── Sidebar nav item ─── */
   .nav-item {
     @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 cursor-pointer;
-    color: oklch(0.45 0.02 255);
+    color: oklch(0.40 0.03 60);
   }
   .nav-item:hover {
-    background: oklch(0.93 0.04 220);
-    color: oklch(0.30 0.12 220);
+    background: oklch(0.94 0.04 65);
+    color: oklch(0.45 0.12 65);
   }
   .nav-item.active {
-    background: oklch(0.38 0.16 255);
+    background: oklch(0.62 0.12 65);
     color: white;
     @apply shadow-sm;
   }

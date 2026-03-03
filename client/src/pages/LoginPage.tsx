@@ -43,11 +43,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" }}>
+    <div className="min-h-screen flex" style={{ background: "linear-gradient(135deg, #fdf8f0 0%, #f5e6d0 100%)" }}>
       {/* Left Panel - Branding */}
       <div
         className="hidden lg:flex flex-col justify-between w-1/2 p-12 text-white"
-        style={{ background: "linear-gradient(160deg, #0f172a 0%, #1e3a5f 50%, #1e40af 100%)" }}
+        style={{ background: "linear-gradient(160deg, #1a0f00 0%, #3d2000 50%, #7a4a10 100%)" }}
       >
         <div>
           <div className="w-48 bg-white rounded-xl p-3 mb-12">
@@ -56,9 +56,9 @@ export default function LoginPage() {
           <h1 className="text-4xl font-bold mb-4 leading-tight">
             منصة فحص العقوبات
             <br />
-            <span className="text-blue-300">الدولية</span>
+            <span style={{ color: "#C17F3E" }}>الدولية</span>
           </h1>
-          <p className="text-slate-300 text-lg leading-relaxed">
+          <p className="text-amber-100 text-lg leading-relaxed">
             نظام بحث ذكي متكامل لفحص الأسماء والكيانات مقابل قوائم العقوبات الدولية مع دعم الذكاء الصناعي ومعالجة الأخطاء الإملائية.
           </p>
         </div>
@@ -69,9 +69,9 @@ export default function LoginPage() {
             { icon: Lock, text: "بحث ذكي مع معالجة الأخطاء الإملائية" },
             { icon: User, text: "سجل تدقيق شامل لجميع العمليات" },
           ].map(({ icon: Icon, text }) => (
-            <div key={text} className="flex items-center gap-3 text-slate-300">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                <Icon className="w-4 h-4 text-blue-300" />
+            <div key={text} className="flex items-center gap-3 text-amber-100">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(193,127,62,0.25)" }}>
+                <Icon className="w-4 h-4" style={{ color: "#C17F3E" }} />
               </div>
               <span className="text-sm">{text}</span>
             </div>
@@ -89,9 +89,9 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+          <div className="bg-white rounded-2xl shadow-xl border p-8" style={{ borderColor: "#e8d5b7" }}>
             <div className="mb-8">
-              <h2 className="text-2xl font-bold text-slate-900 mb-1">تسجيل الدخول</h2>
+              <h2 className="text-2xl font-bold mb-1" style={{ color: "#3d2000" }}>تسجيل الدخول</h2>
               <p className="text-slate-500 text-sm">أدخل بيانات حسابك للوصول إلى المنصة</p>
             </div>
 
@@ -108,7 +108,8 @@ export default function LoginPage() {
                     placeholder="أدخل اسم المستخدم"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="pr-10 border-slate-200 focus:border-blue-500 focus:ring-blue-500 text-right"
+                    className="pr-10 text-right"
+                    style={{ borderColor: "#e8d5b7" }}
                     autoComplete="username"
                     disabled={loginMutation.isPending}
                   />
@@ -127,7 +128,8 @@ export default function LoginPage() {
                     placeholder="أدخل كلمة المرور"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pr-10 pl-10 border-slate-200 focus:border-blue-500 focus:ring-blue-500 text-right"
+                    className="pr-10 pl-10 text-right"
+                    style={{ borderColor: "#e8d5b7" }}
                     autoComplete="current-password"
                     disabled={loginMutation.isPending}
                   />
@@ -143,8 +145,8 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full h-11 text-base font-semibold"
-                style={{ background: "linear-gradient(135deg, #1e40af, #1d4ed8)" }}
+                className="w-full h-11 text-base font-semibold text-white"
+                style={{ background: "linear-gradient(135deg, #C17F3E, #a06830)" }}
                 disabled={loginMutation.isPending}
               >
                 {loginMutation.isPending ? (
@@ -161,7 +163,7 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+            <div className="mt-6 pt-6 border-t text-center" style={{ borderColor: "#f0e0c8" }}>
               <p className="text-xs text-slate-400">
                 المستشار للاستشارات القانونية &copy; {new Date().getFullYear()}
               </p>

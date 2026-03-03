@@ -63,7 +63,16 @@
 - [x] Save checkpoint and deliver
 
 ## Phase 9: Fix Sign In Redirect
-- [ ] Fix Sign In button in Home page to redirect to /login instead of Manus OAuth
-- [ ] Fix AppLayout Sign In link to redirect to /login
-- [ ] Ensure all auth redirects bypass OAuth and go directly to password login
+- [x] Fix Sign In button in Home page to redirect to /login instead of Manus OAuth
+- [x] Fix AppLayout Sign In link to redirect to /login
+- [x] Ensure all auth redirects bypass OAuth and go directly to password login
+- [x] Save checkpoint and deliver
+
+## Phase 10: Golden Brand Colors
+- [ ] Update CSS --primary variable to golden color (#C17F3E)
+- [ ] Update sidebar active nav item to golden
+- [ ] Update SCREEN button and all primary buttons to golden
+- [ ] Update login page accent to golden
+- [ ] Update badges and highlights to golden
+- [ ] Test all pages visually
 - [ ] Save checkpoint and deliver
