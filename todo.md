@@ -98,3 +98,10 @@
 - [x] Ensure exact match on English name returns 100% score
 - [x] Test with "DREW PROPERTIES CO. LTD." and verify it returns exact match
 - [x] Save checkpoint
+
+## Phase 14: Fix PDF Arabic Font Issue
+- [x] Install puppeteer for HTML-to-PDF generation
+- [x] Build professional HTML template with full Arabic RTL support
+- [x] Update server PDF endpoint to use puppeteer instead of pdfkit
+- [x] Test PDF output with Arabic content
+- [x] Save checkpoint
