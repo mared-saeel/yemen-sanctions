@@ -181,7 +181,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
 
   // Build results
   const results: SearchResult[] = [];
-  for (const [, { record, score }] of scoreMap) {
+  for (const [, { record, score }] of Array.from(scoreMap.entries())) {
     if (score < 0.3) continue;
     results.push({
       id: record.id,

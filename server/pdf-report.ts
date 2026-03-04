@@ -8,7 +8,19 @@ import puppeteer from "puppeteer-core";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
 
-const CHROMIUM_PATH = "/usr/bin/chromium-browser";
+import { existsSync, accessSync, constants as fsConstants } from "fs";
+
+// Find the real Chromium executable (not the bash wrapper)
+const CHROMIUM_CANDIDATES = [
+  "/usr/lib/chromium-browser/chromium-browser",  // Real binary on Ubuntu (not bash wrapper)
+  "/usr/bin/chromium",                            // Some Linux distros
+  "/usr/bin/google-chrome",                       // Google Chrome
+  "/usr/bin/chromium-browser",                    // Fallback bash wrapper
+];
+const CHROMIUM_PATH = CHROMIUM_CANDIDATES.find(p => {
+  try { accessSync(p, fsConstants.X_OK); return true; } catch { return false; }
+}) || "/usr/lib/chromium-browser/chromium-browser";
+console.log("[PDF] Using Chromium at:", CHROMIUM_PATH);
 
 function buildHtml(record: Awaited<ReturnType<typeof getRecordById>>, userName: string): string {
   if (!record) return "";
