@@ -1,0 +1,14 @@
+{
+  "query": "SELECT MIN(id) as min_id, MAX(id) as max_id FROM sanctions_records;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT MIN(id) as min_id, MAX(id) as max_id FROM sanctions_records;",
+  "rows": [
+    {
+      "min_id": "39711",
+      "max_id": "79510"
+    }
+  ],
+  "messages": [],
+  "stdout": "min_id\tmax_id\n39711\t79510\n",
+  "stderr": "",
+  "execution_time_ms": 359
+}

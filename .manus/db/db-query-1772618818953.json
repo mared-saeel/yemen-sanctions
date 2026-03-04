@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, nameEn FROM sanctions_records LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, nameEn FROM sanctions_records LIMIT 3;",
+  "rows": [
+    {
+      "id": "65141",
+      "nameEn": "'ABBAS YASIR"
+    },
+    {
+      "id": "66082",
+      "nameEn": "'ABD AL-HAMID AL-ASADI MAKKI KAZIM"
+    },
+    {
+      "id": "45543",
+      "nameEn": "'ABD AL-NASIR HAJJI"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnameEn\n65141\t'ABBAS YASIR\n66082\t'ABD AL-HAMID AL-ASADI MAKKI KAZIM\n45543\t'ABD AL-NASIR HAJJI\n",
+  "stderr": "",
+  "execution_time_ms": 354
+}

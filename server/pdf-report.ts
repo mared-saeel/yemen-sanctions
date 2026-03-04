@@ -52,7 +52,7 @@ function buildHtml(record: Awaited<ReturnType<typeof getRecordById>>, userName: 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', Arial, sans-serif;
+      font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Arial Unicode MS', Arial, sans-serif;
       direction: rtl;
       background: #ffffff;
       color: #1a1a2e;
@@ -338,6 +338,37 @@ function buildHtml(record: Awaited<ReturnType<typeof getRecordById>>, userName: 
 </html>`;
 }
 
+let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+let browserUseCount = 0;
+const MAX_REUSE = 20;
+
+async function getBrowser() {
+  if (browserInstance && browserUseCount < MAX_REUSE) {
+    browserUseCount++;
+    return browserInstance;
+  }
+  // Close old browser if exists
+  if (browserInstance) {
+    await browserInstance.close().catch(() => {});
+    browserInstance = null;
+  }
+  browserInstance = await puppeteer.launch({
+    executablePath: CHROMIUM_PATH,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--font-render-hinting=none",
+      "--disable-extensions",
+      "--disable-background-networking",
+    ],
+    headless: true,
+  });
+  browserUseCount = 1;
+  return browserInstance;
+}
+
 export async function handleGeneratePdfReport(req: Request, res: Response) {
   // Auth check
   const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
@@ -355,25 +386,22 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     return res.status(404).json({ error: "Record not found" });
   }
 
-  const userName = ctx.user.name || ctx.user.username || "—";
+  const userName = ctx.user.name || (ctx.user as any).username || "—";
   const html = buildHtml(record, userName);
 
-  let browser;
+  let page;
   try {
-    browser = await puppeteer.launch({
-      executablePath: CHROMIUM_PATH,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--font-render-hinting=none",
-      ],
-      headless: true,
-    });
+    const browser = await getBrowser();
+    page = await browser.newPage();
 
-    const page = await browser.newPage();
+    // Set viewport for A4
+    await page.setViewport({ width: 794, height: 1123 });
+
+    // Load the HTML with a timeout - allow fonts to load
     await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+
+    // Wait a bit for Google Fonts to render
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     const pdfBuffer = await page.pdf({
       format: "A4",
@@ -381,7 +409,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
     });
 
-    await browser.close();
+    await page.close();
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -390,7 +418,12 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     );
     res.send(Buffer.from(pdfBuffer));
   } catch (err) {
-    if (browser) await browser.close().catch(() => {});
+    if (page) await page.close().catch(() => {});
+    // Reset browser on error
+    if (browserInstance) {
+      await browserInstance.close().catch(() => {});
+      browserInstance = null;
+    }
     console.error("PDF generation error:", err);
     res.status(500).json({ error: "Failed to generate PDF report" });
   }
