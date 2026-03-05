@@ -4,16 +4,17 @@
  * using PDFKit with dual fonts: NotoSansArabic (Arabic) + NotoSans (English/Latin)
  *
  * Key fix: Arabic text requires `features: ['rtla', 'arab']` for correct RTL rendering
+ * Alternative names: use NotoSans (Latin) for non-Arabic names to avoid boxes
  */
 import type { Request, Response } from "express";
 import PDFDocument from "pdfkit";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
 
 // Font paths - bundled inside server/fonts/ for production compatibility
-// Use import.meta.url since this is an ES module (no __dirname available)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname_local = path.dirname(__filename);
 const FONTS_DIR = path.join(__dirname_local, "fonts");
@@ -21,6 +22,7 @@ const FONT_ARABIC = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
 const FONT_ARABIC_BOLD = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
 const FONT_LATIN = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
 const FONT_LATIN_BOLD = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
+const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
 
 // RTL OpenType features required for correct Arabic rendering in PDFKit
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,6 +79,26 @@ function writeLatin(
   });
 }
 
+/**
+ * Write text using the appropriate font based on content detection
+ */
+function writeAutoFont(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  opts: PDFKit.Mixins.TextOptions = {},
+  bold = false
+) {
+  if (isArabicText(text)) {
+    doc.font(bold ? FONT_ARABIC_BOLD : FONT_ARABIC);
+    writeArabic(doc, text, x, y, opts);
+  } else {
+    doc.font(bold ? FONT_LATIN_BOLD : FONT_LATIN);
+    writeLatin(doc, text, x, y, opts);
+  }
+}
+
 function drawHorizontalLine(doc: PDFKit.PDFDocument, y: number, color = BORDER) {
   doc.save()
     .strokeColor(color)
@@ -131,17 +153,10 @@ function drawField(
   doc.font(FONT_LATIN).fontSize(6).fillColor(MID_GRAY);
   writeLatin(doc, labelEn, x + 6, y + 6, { width: width - 12 });
 
-  // Value - use correct font based on content
-  const isArabic = isArabicText(value);
+  // Value - auto-detect font based on content
   const displayValue = value || "—";
-
-  if (isArabic) {
-    doc.font(FONT_ARABIC_BOLD).fontSize(9).fillColor(DARK);
-    writeArabic(doc, displayValue, x + 6, y + 20, { width: width - 12 });
-  } else {
-    doc.font(FONT_LATIN_BOLD).fontSize(9).fillColor(DARK);
-    writeLatin(doc, displayValue, x + 6, y + 20, { width: width - 12 });
-  }
+  doc.fontSize(9).fillColor(DARK);
+  writeAutoFont(doc, displayValue, x + 6, y + 20, { width: width - 12 }, true);
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -162,10 +177,14 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       return res.status(404).json({ error: "Record not found" });
     }
 
+    // Check if logo exists
+    const logoExists = fs.existsSync(LOGO_PATH);
+
     // Generate PDF
     const doc = new PDFDocument({
       size: "A4",
       margins: { top: 40, bottom: 40, left: 40, right: 40 },
+      bufferPages: true,
       info: {
         Title: `Sanctions Screening Report - ${record.nameEn}`,
         Author: "Al-Mustashar Legal Consultancy",
@@ -186,32 +205,46 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     let y = 40;
 
     // ─── HEADER BANNER ────────────────────────────────────────────────────────
+    // Dark background for header
     doc.save()
-      .rect(0, 0, pageWidth, 82)
+      .rect(0, 0, pageWidth, 90)
       .fill(DARK)
       .restore();
 
-    // Gold accent line
+    // Gold accent line at bottom of header
     doc.save()
-      .rect(0, 82, pageWidth, 4)
+      .rect(0, 90, pageWidth, 4)
       .fill(GOLD)
       .restore();
 
-    // Platform title (left side) - English font
-    doc.font(FONT_LATIN_BOLD).fontSize(18).fillColor("#ffffff");
-    writeLatin(doc, "SanctionCheck", 40, 20, { width: 200 });
-
-    doc.font(FONT_LATIN).fontSize(8).fillColor("#94a3b8");
-    writeLatin(doc, "Sanctions Screening Platform", 40, 44, { width: 200 });
+    // Logo on the LEFT side
+    if (logoExists) {
+      // Logo: white background circle/box behind it for contrast
+      doc.save()
+        .rect(30, 8, 74, 74)
+        .fill("#ffffff")
+        .restore();
+      doc.image(LOGO_PATH, 32, 10, { width: 70, height: 70 });
+    } else {
+      // Fallback text logo
+      doc.font(FONT_LATIN_BOLD).fontSize(18).fillColor("#ffffff");
+      writeLatin(doc, "SanctionCheck", 40, 20, { width: 200 });
+      doc.font(FONT_LATIN).fontSize(8).fillColor("#94a3b8");
+      writeLatin(doc, "Sanctions Screening Platform", 40, 44, { width: 200 });
+    }
 
     // Arabic title (right side) - Arabic font
-    doc.font(FONT_ARABIC_BOLD).fontSize(14).fillColor("#ffffff");
-    writeArabic(doc, "تقرير فحص العقوبات الدولية", 0, 20, { width: pageWidth - 40 });
+    doc.font(FONT_ARABIC_BOLD).fontSize(16).fillColor("#ffffff");
+    writeArabic(doc, "تقرير فحص العقوبات الدولية", 0, 18, { width: pageWidth - 40 });
 
-    doc.font(FONT_ARABIC).fontSize(8).fillColor(GOLD);
+    doc.font(FONT_ARABIC).fontSize(9).fillColor(GOLD);
     writeArabic(doc, "المستشار للاستشارات القانونية", 0, 44, { width: pageWidth - 40 });
 
-    y = 102;
+    // Platform name below Arabic subtitle
+    doc.font(FONT_LATIN).fontSize(7.5).fillColor("#94a3b8");
+    writeLatin(doc, "SanctionCheck  |  Sanctions Screening Platform", 110, 65, { width: pageWidth - 150 });
+
+    y = 110;
 
     // ─── ALERT BANNER ─────────────────────────────────────────────────────────
     doc.save()
@@ -293,14 +326,50 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     y += 64;
 
-    // Alternative names
+    // Alternative names - use auto font detection per name to avoid boxes
     const altNames = record.alternativeNames as string[] | null;
     if (altNames && altNames.length > 0) {
-      doc.font(FONT_ARABIC).fontSize(7.5).fillColor(MID_GRAY);
-      writeArabic(doc, "الأسماء البديلة: " + altNames.join(" | "), 40, y, {
-        width: contentWidth,
-      });
-      y += 18;
+      // Filter out names that have unsupported characters (keep only Arabic and Latin)
+      const cleanNames = altNames.map(name => {
+        // Replace unsupported characters with space
+        return name.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, '');
+      }).filter(name => name.trim().length > 0);
+
+      if (cleanNames.length > 0) {
+        // Label
+        doc.font(FONT_ARABIC).fontSize(7).fillColor(MID_GRAY);
+        writeArabic(doc, "الأسماء البديلة:", 40, y, { width: contentWidth });
+        y += 14;
+
+        // Each name on its own with correct font
+        const namesPerRow = 3;
+        const nameWidth = (contentWidth - (namesPerRow - 1) * 6) / namesPerRow;
+
+        for (let i = 0; i < Math.min(cleanNames.length, 12); i++) {
+          const col = i % namesPerRow;
+          const row = Math.floor(i / namesPerRow);
+          const nx = 40 + col * (nameWidth + 6);
+          const ny = y + row * 20;
+
+          doc.save()
+            .rect(nx, ny, nameWidth, 16)
+            .fill("#f8f9fa")
+            .restore();
+
+          const name = cleanNames[i];
+          doc.fontSize(7.5).fillColor(DARK);
+          if (isArabicText(name)) {
+            doc.font(FONT_ARABIC);
+            writeArabic(doc, name, nx, ny + 3, { width: nameWidth, lineBreak: false });
+          } else {
+            doc.font(FONT_LATIN);
+            writeLatin(doc, name, nx + 3, ny + 4, { width: nameWidth - 6, lineBreak: false });
+          }
+        }
+
+        const rowCount = Math.ceil(Math.min(cleanNames.length, 12) / namesPerRow);
+        y += rowCount * 20 + 8;
+      }
     }
 
     y += 6;
@@ -387,35 +456,39 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         .fillAndStroke("#fffbeb", "#fde68a")
         .restore();
 
-      const isArabicNotes = isArabicText(record.notes);
-      if (isArabicNotes) {
-        doc.font(FONT_ARABIC).fontSize(8.5).fillColor(DARK);
-        writeArabic(doc, record.notes, 50, y + 10, { width: contentWidth - 20 });
-      } else {
-        doc.font(FONT_LATIN).fontSize(8.5).fillColor(DARK);
-        writeLatin(doc, record.notes, 50, y + 10, { width: contentWidth - 20 });
-      }
+      doc.fontSize(8.5).fillColor(DARK);
+      writeAutoFont(doc, record.notes, 50, y + 10, { width: contentWidth - 20 });
       y += notesHeight + 8;
     }
 
-    // ─── FOOTER ───────────────────────────────────────────────────────────────
-    // Use bufferPages to render footer on the last page without creating new pages
+    // ─── FOOTER (rendered on last page using bufferPages) ──────────────────────
+    const range = doc.bufferedPageRange();
+    const lastPageIdx = range.start + range.count - 1;
+    doc.switchToPage(lastPageIdx);
+
+    // Disable bottom margin to prevent new page creation when writing footer
+    (doc.page as any).margins.bottom = 0;
+
     const footerY = doc.page.height - 70;
 
-    // Always render footer - use absolute position on current page
-    drawHorizontalLine(doc, footerY - 8, GOLD);
+    // Footer separator and background
+    doc.save();
+    doc.strokeColor(GOLD).lineWidth(0.5)
+      .moveTo(40, footerY - 8).lineTo(pageWidth - 40, footerY - 8).stroke();
+    doc.rect(0, footerY - 8, pageWidth, 78).fill("#f8fafc");
+    doc.restore();
 
-    doc.save()
-      .rect(0, footerY, pageWidth, 70)
-      .fill("#f8fafc")
-      .restore();
+    // Small logo in footer
+    if (logoExists) {
+      doc.image(LOGO_PATH, 40, footerY + 2, { width: 28, height: 28 });
+    }
 
-    // Arabic footer - use pure Arabic text (no mixed Latin/Arabic in same string)
+    // Arabic footer
     doc.font(FONT_ARABIC).fontSize(7).fillColor(MID_GRAY);
     writeArabic(
       doc,
       "هذا التقرير صادر عن منصة المستشار للاستشارات القانونية. المعلومات مستخرجة من قواعد بيانات العقوبات الدولية.",
-      40, footerY + 5,
+      40, footerY + 2,
       { width: contentWidth, align: "center", lineBreak: false }
     );
 
@@ -424,7 +497,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     writeLatin(
       doc,
       "This report is for compliance and due diligence purposes only. Always verify with official sanctions lists before taking action.",
-      40, footerY + 20,
+      40, footerY + 18,
       { width: contentWidth, align: "center", lineBreak: false }
     );
 
@@ -433,10 +506,11 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     writeLatin(
       doc,
       `SanctionCheck (c) ${new Date().getFullYear()} - Al-Mustashar Legal Consultancy`,
-      40, footerY + 40,
+      40, footerY + 32,
       { width: contentWidth, align: "center", lineBreak: false }
     );
 
+    doc.flushPages();
     doc.end();
   } catch (err) {
     console.error("[PDF Report Error]", err);

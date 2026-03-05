@@ -118,4 +118,13 @@
 - [x] Diagnose: fonts in server/fonts/ not copied to dist/fonts/ during build
 - [x] Fix build script in package.json to copy fonts after esbuild: cp -r server/fonts dist/fonts
 - [x] Verify dist/fonts/ contains all 4 font files after build
-- [ ] Save checkpoint and publish
+- [x] Save checkpoint and publish
+
+## Phase 17: PDF Report - Fix Boxes & Add Logo
+- [x] Remove black background from logo and convert to transparent PNG
+- [x] Copy logo to server/fonts/logo.png for server-side use
+- [x] Fix alternative names boxes (detect language per name, use correct font)
+- [x] Add logo to PDF report header and footer attractively
+- [x] Fix second empty page issue (bufferPages + disable bottom margin trick)
+- [x] Update build script to copy logo.png to dist/fonts/
+- [x] Test and save checkpoint
