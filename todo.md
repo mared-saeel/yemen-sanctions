@@ -112,4 +112,10 @@
 - [x] Update pdf-report.ts to use relative paths to bundled fonts
 - [x] Fix __dirname ES module error (use import.meta.url instead)
 - [x] Test PDF generation with bundled fonts locally
+- [x] Save checkpoint and publish
+
+## Phase 16: Fix PDF in Production - Fonts Not Copied to dist
+- [x] Diagnose: fonts in server/fonts/ not copied to dist/fonts/ during build
+- [x] Fix build script in package.json to copy fonts after esbuild: cp -r server/fonts dist/fonts
+- [x] Verify dist/fonts/ contains all 4 font files after build
 - [ ] Save checkpoint and publish
