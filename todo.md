@@ -128,3 +128,12 @@
 - [x] Fix second empty page issue (bufferPages + disable bottom margin trick)
 - [x] Update build script to copy logo.png to dist/fonts/
 - [x] Test and save checkpoint
+
+## Phase 18: Home Page Redesign - Language Toggle & Logo
+- [x] Add language toggle button (AR/EN) in navbar
+- [x] Translate all Home page content to Arabic (inline translations object)
+- [x] Add Al-Mustashar logo attractively in navbar header and footer
+- [x] Improve overall Home page design with golden accent colors
+- [x] Support RTL direction when Arabic is selected
+- [x] Default language set to Arabic
+- [ ] Save checkpoint and publish
