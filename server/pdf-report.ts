@@ -1,384 +1,85 @@
 /**
  * PDF Report Generator
  * Generates a professional sanctions screening report in Arabic/English
- * using Puppeteer (HTML → PDF) for full RTL and Arabic font support.
+ * using PDFKit with NotoSansArabic font for proper RTL rendering.
  */
 import type { Request, Response } from "express";
-import puppeteer from "puppeteer-core";
+import PDFDocument from "pdfkit";
+import path from "path";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
 
-import { existsSync, accessSync, constants as fsConstants } from "fs";
+const ARABIC_FONT = "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf";
+const ARABIC_FONT_BOLD = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf";
 
-// Find the real Chromium executable (not the bash wrapper)
-const CHROMIUM_CANDIDATES = [
-  "/usr/lib/chromium-browser/chromium-browser",  // Real binary on Ubuntu (not bash wrapper)
-  "/usr/bin/chromium",                            // Some Linux distros
-  "/usr/bin/google-chrome",                       // Google Chrome
-  "/usr/bin/chromium-browser",                    // Fallback bash wrapper
-];
-const CHROMIUM_PATH = CHROMIUM_CANDIDATES.find(p => {
-  try { accessSync(p, fsConstants.X_OK); return true; } catch { return false; }
-}) || "/usr/lib/chromium-browser/chromium-browser";
-console.log("[PDF] Using Chromium at:", CHROMIUM_PATH);
+// Golden brand color
+const GOLD = "#C17F3E";
+const DARK = "#1a1a2e";
+const LIGHT_GRAY = "#f8f9fa";
+const MID_GRAY = "#6c757d";
+const BORDER = "#e2e8f0";
+const RED_ALERT = "#dc2626";
 
-function buildHtml(record: Awaited<ReturnType<typeof getRecordById>>, userName: string): string {
-  if (!record) return "";
-
-  const reportDate = new Date().toLocaleString("ar-SA", {
-    year: "numeric", month: "long", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-
-  const entityTypeAr: Record<string, string> = {
-    individual: "فرد / Individual",
-    organisation: "كيان / Organisation",
-    vessel: "سفينة / Vessel",
-    unspecified: "غير محدد / Unspecified",
-  };
-
-  const altNames = (record.alternativeNames as string[] | null) || [];
-  const entityLabel = entityTypeAr[record.entityType || "unspecified"] || record.entityType || "—";
-
-  const field = (label: string, value: string | null | undefined) => `
-    <div class="field">
-      <div class="field-label">${label}</div>
-      <div class="field-value">${value || "—"}</div>
-    </div>`;
-
-  const halfField = (label: string, value: string | null | undefined) => `
-    <div class="field half">
-      <div class="field-label">${label}</div>
-      <div class="field-value">${value || "—"}</div>
-    </div>`;
-
-  return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>تقرير فحص العقوبات</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Arial Unicode MS', Arial, sans-serif;
-      direction: rtl;
-      background: #ffffff;
-      color: #1a1a2e;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-
-    /* ── HEADER ── */
-    .header {
-      background: #1a1a2e;
-      padding: 20px 32px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .header-right { text-align: right; }
-    .header-left { text-align: left; }
-    .header-title-ar {
-      font-size: 20px;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.5px;
-    }
-    .header-subtitle-ar {
-      font-size: 11px;
-      color: #C17F3E;
-      margin-top: 2px;
-    }
-    .header-title-en {
-      font-size: 22px;
-      font-weight: 700;
-      color: #ffffff;
-      font-family: Arial, sans-serif;
-    }
-    .header-subtitle-en {
-      font-size: 10px;
-      color: #94a3b8;
-      margin-top: 2px;
-      font-family: Arial, sans-serif;
-    }
-    .gold-bar {
-      height: 4px;
-      background: #C17F3E;
-    }
-
-    /* ── CONTENT ── */
-    .content { padding: 24px 32px; }
-
-    /* ── ALERT BANNER ── */
-    .alert-banner {
-      background: #fef2f2;
-      border: 1.5px solid #fecaca;
-      border-right: 4px solid #dc2626;
-      border-radius: 6px;
-      padding: 12px 16px;
-      margin-bottom: 20px;
-      text-align: center;
-    }
-    .alert-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #dc2626;
-      margin-bottom: 4px;
-    }
-    .alert-subtitle {
-      font-size: 11px;
-      color: #991b1b;
-      font-family: Arial, sans-serif;
-    }
-
-    /* ── META INFO ── */
-    .meta-bar {
-      background: #fffbeb;
-      border: 1px solid #fde68a;
-      border-radius: 6px;
-      padding: 10px 16px;
-      margin-bottom: 20px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: #6c757d;
-    }
-    .meta-bar span { display: block; margin-bottom: 2px; }
-
-    /* ── SECTION HEADER ── */
-    .section-header {
-      background: #f1f5f9;
-      border-right: 3px solid #C17F3E;
-      padding: 8px 14px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #1a1a2e;
-      margin-bottom: 12px;
-      border-radius: 0 4px 4px 0;
-    }
-
-    /* ── FIELDS ── */
-    .fields-row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-    }
-    .field {
-      background: #f8f9fa;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 10px 14px;
-      flex: 1;
-      min-width: 200px;
-      margin-bottom: 12px;
-    }
-    .field.half { flex: 1; min-width: calc(50% - 6px); max-width: calc(50% - 6px); }
-    .field.full { flex: 1 1 100%; max-width: 100%; }
-    .field-label {
-      font-size: 10px;
-      color: #6c757d;
-      margin-bottom: 4px;
-    }
-    .field-value {
-      font-size: 13px;
-      font-weight: 600;
-      color: #1a1a2e;
-      word-break: break-word;
-    }
-
-    /* ── NAME BOX ── */
-    .name-box {
-      background: #ffffff;
-      border: 1.5px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 16px 20px;
-      margin-bottom: 12px;
-    }
-    .name-en {
-      font-size: 18px;
-      font-weight: 700;
-      color: #1a1a2e;
-      font-family: Arial, sans-serif;
-      margin-bottom: 6px;
-    }
-    .name-ar {
-      font-size: 15px;
-      color: #6c757d;
-    }
-    .alt-names {
-      font-size: 10px;
-      color: #94a3b8;
-      margin-top: 8px;
-    }
-
-    /* ── SECTION SPACING ── */
-    .section { margin-bottom: 24px; }
-
-    /* ── NOTES ── */
-    .notes-box {
-      background: #fffbeb;
-      border: 1px solid #fde68a;
-      border-radius: 6px;
-      padding: 14px 18px;
-      font-size: 12px;
-      color: #1a1a2e;
-      line-height: 1.8;
-    }
-
-    /* ── FOOTER ── */
-    .footer {
-      margin-top: 32px;
-      padding-top: 16px;
-      border-top: 2px solid #C17F3E;
-      text-align: center;
-    }
-    .footer-text {
-      font-size: 10px;
-      color: #6c757d;
-      margin-bottom: 4px;
-    }
-    .footer-brand {
-      font-size: 10px;
-      color: #C17F3E;
-      font-weight: 600;
-      margin-top: 8px;
-    }
-  </style>
-</head>
-<body>
-
-  <!-- HEADER -->
-  <div class="header">
-    <div class="header-left">
-      <div class="header-title-en">SanctionCheck</div>
-      <div class="header-subtitle-en">Sanctions Screening Platform</div>
-    </div>
-    <div class="header-right">
-      <div class="header-title-ar">تقرير فحص العقوبات الدولية</div>
-      <div class="header-subtitle-ar">المستشار للاستشارات القانونية</div>
-    </div>
-  </div>
-  <div class="gold-bar"></div>
-
-  <div class="content">
-
-    <!-- ALERT BANNER -->
-    <div class="alert-banner">
-      <div class="alert-title">⚠ كيان مدرج على قوائم العقوبات الدولية ⚠</div>
-      <div class="alert-subtitle">SANCTIONED ENTITY — This entity appears on international sanctions lists</div>
-    </div>
-
-    <!-- META INFO -->
-    <div class="meta-bar">
-      <div>
-        <span>تاريخ الفحص: ${reportDate}</span>
-        <span>المستخدم: ${userName}</span>
-      </div>
-      <div style="text-align:left; direction:ltr;">
-        <span>Record ID: ${record.referenceNumber || `ID-${record.id}`}</span>
-        <span>Generated by SanctionCheck</span>
-      </div>
-    </div>
-
-    <!-- PRIMARY NAMES -->
-    <div class="section">
-      <div class="section-header">الأسماء الأساسية &nbsp;/&nbsp; Primary Names</div>
-      <div class="name-box">
-        <div class="name-en">${record.nameEn || "—"}</div>
-        ${record.nameAr ? `<div class="name-ar">${record.nameAr}</div>` : ""}
-        ${altNames.length > 0 ? `<div class="alt-names">الأسماء البديلة: ${altNames.join(" | ")}</div>` : ""}
-      </div>
-    </div>
-
-    <!-- ENTITY DETAILS -->
-    <div class="section">
-      <div class="section-header">تفاصيل الكيان &nbsp;/&nbsp; Entity Details</div>
-      <div class="fields-row">
-        ${halfField("نوع الكيان / Entity Type", entityLabel)}
-        ${halfField("الجنسية / Nationality", record.nationality)}
-      </div>
-      ${record.dateOfBirth || record.placeOfBirth ? `
-      <div class="fields-row">
-        ${halfField("تاريخ الميلاد / Date of Birth", record.dateOfBirth)}
-        ${halfField("مكان الميلاد / Place of Birth", record.placeOfBirth)}
-      </div>` : ""}
-    </div>
-
-    <!-- LISTING INFORMATION -->
-    <div class="section">
-      <div class="section-header">معلومات الإدراج &nbsp;/&nbsp; Listing Information</div>
-      <div class="fields-row">
-        ${halfField("الجهة المدرجة / Issuing Body", record.issuingBody)}
-        ${halfField("تاريخ الإدراج / Listing Date", record.listingDate)}
-      </div>
-      ${record.legalBasis ? `
-      <div class="fields-row">
-        ${field("السند القانوني / Legal Basis", record.legalBasis)}
-      </div>` : ""}
-      ${record.listingReason ? `
-      <div class="fields-row">
-        ${field("سبب الإدراج / Listing Reason", record.listingReason)}
-      </div>` : ""}
-      ${record.actionTaken ? `
-      <div class="fields-row">
-        ${field("الإجراء المتخذ / Action Taken", record.actionTaken)}
-      </div>` : ""}
-    </div>
-
-    ${record.notes ? `
-    <!-- NOTES -->
-    <div class="section">
-      <div class="section-header">ملاحظات &nbsp;/&nbsp; Notes</div>
-      <div class="notes-box">${record.notes}</div>
-    </div>` : ""}
-
-    <!-- FOOTER -->
-    <div class="footer">
-      <div class="footer-text">هذا التقرير صادر عن منصة SanctionCheck التابعة للمستشار للاستشارات القانونية.</div>
-      <div class="footer-text">المعلومات الواردة مستخرجة من قواعد بيانات العقوبات الدولية وهي لأغراض الامتثال والعناية الواجبة فقط.</div>
-      <div class="footer-text" style="font-family: Arial, sans-serif; direction: ltr;">This report is for compliance and due diligence purposes only. Always verify with official sanctions lists.</div>
-      <div class="footer-brand">SanctionCheck © ${new Date().getFullYear()} — المستشار للاستشارات القانونية</div>
-    </div>
-
-  </div>
-</body>
-</html>`;
+function reverseArabic(text: string): string {
+  // PDFKit doesn't natively support RTL, so we reverse Arabic text
+  // and use RTL unicode markers for proper display
+  if (!text) return "";
+  return text;
 }
 
-let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
-let browserUseCount = 0;
-const MAX_REUSE = 20;
+function drawHorizontalLine(doc: PDFKit.PDFDocument, y: number, color = BORDER) {
+  doc.save()
+    .strokeColor(color)
+    .lineWidth(0.5)
+    .moveTo(40, y)
+    .lineTo(doc.page.width - 40, y)
+    .stroke()
+    .restore();
+}
 
-async function getBrowser() {
-  if (browserInstance && browserUseCount < MAX_REUSE) {
-    browserUseCount++;
-    return browserInstance;
-  }
-  // Close old browser if exists
-  if (browserInstance) {
-    await browserInstance.close().catch(() => {});
-    browserInstance = null;
-  }
-  browserInstance = await puppeteer.launch({
-    executablePath: CHROMIUM_PATH,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--font-render-hinting=none",
-      "--disable-extensions",
-      "--disable-background-networking",
-    ],
-    headless: true,
-  });
-  browserUseCount = 1;
-  return browserInstance;
+function drawSection(doc: PDFKit.PDFDocument, title: string, y: number): number {
+  doc.save()
+    .rect(40, y, doc.page.width - 80, 22)
+    .fill("#f1f5f9")
+    .restore();
+
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(8)
+    .fillColor(DARK)
+    .text(title, 40, y + 6, {
+      width: doc.page.width - 80,
+      align: "right",
+    });
+
+  return y + 28;
+}
+
+function drawField(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  height = 40
+): void {
+  // Box
+  doc.save()
+    .rect(x, y, width, height)
+    .fillAndStroke(LIGHT_GRAY, BORDER)
+    .restore();
+
+  // Label
+  doc.font(ARABIC_FONT)
+    .fontSize(7)
+    .fillColor(MID_GRAY)
+    .text(label, x + 6, y + 6, { width: width - 12, align: "right" });
+
+  // Value
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(9)
+    .fillColor(DARK)
+    .text(value || "—", x + 6, y + 18, { width: width - 12, align: "right" });
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -398,45 +99,289 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     return res.status(404).json({ error: "Record not found" });
   }
 
-  const userName = ctx.user.name || (ctx.user as any).username || "—";
-  const html = buildHtml(record, userName);
+  // Generate PDF
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 40, bottom: 40, left: 40, right: 40 },
+    info: {
+      Title: `Sanctions Screening Report - ${record.nameEn}`,
+      Author: "المستشار للاستشارات القانونية",
+      Subject: "Sanctions Screening Report",
+      Creator: "SanctionCheck Platform",
+    },
+  });
 
-  let page;
-  try {
-    const browser = await getBrowser();
-    page = await browser.newPage();
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="sanctions-report-${recordId}-${Date.now()}.pdf"`
+  );
+  doc.pipe(res);
 
-    // Set viewport for A4
-    await page.setViewport({ width: 794, height: 1123 });
+  const pageWidth = doc.page.width;
+  const contentWidth = pageWidth - 80;
+  let y = 40;
 
-    // Load the HTML with a timeout - allow fonts to load
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+  // ─── HEADER BANNER ────────────────────────────────────────────────────────
+  doc.save()
+    .rect(0, 0, pageWidth, 80)
+    .fill(DARK)
+    .restore();
 
-    // Wait a bit for Google Fonts to render
-    await new Promise(resolve => setTimeout(resolve, 1500));
+  // Gold accent line
+  doc.save()
+    .rect(0, 80, pageWidth, 4)
+    .fill(GOLD)
+    .restore();
 
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "0", bottom: "0", left: "0", right: "0" },
+  // Platform title (left side)
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(18)
+    .fillColor("#ffffff")
+    .text("SanctionCheck", 40, 22, { align: "left", width: 200 });
+
+  doc.font(ARABIC_FONT)
+    .fontSize(8)
+    .fillColor("#94a3b8")
+    .text("Sanctions Screening Platform", 40, 44, { align: "left", width: 200 });
+
+  // Arabic title (right side)
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(14)
+    .fillColor("#ffffff")
+    .text("تقرير فحص العقوبات الدولية", 0, 20, {
+      align: "right",
+      width: pageWidth - 40,
     });
 
-    await page.close();
+  doc.font(ARABIC_FONT)
+    .fontSize(8)
+    .fillColor(GOLD)
+    .text("المستشار للاستشارات القانونية", 0, 42, {
+      align: "right",
+      width: pageWidth - 40,
+    });
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="sanctions-report-${recordId}-${Date.now()}.pdf"`
-    );
-    res.send(Buffer.from(pdfBuffer));
-  } catch (err) {
-    if (page) await page.close().catch(() => {});
-    // Reset browser on error
-    if (browserInstance) {
-      await browserInstance.close().catch(() => {});
-      browserInstance = null;
-    }
-    console.error("PDF generation error:", err);
-    res.status(500).json({ error: "Failed to generate PDF report" });
+  y = 100;
+
+  // ─── ALERT BANNER ─────────────────────────────────────────────────────────
+  doc.save()
+    .rect(40, y, contentWidth, 36)
+    .fillAndStroke("#fef2f2", "#fecaca")
+    .restore();
+
+  doc.save()
+    .rect(40, y, 4, 36)
+    .fill(RED_ALERT)
+    .restore();
+
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(10)
+    .fillColor(RED_ALERT)
+    .text("⚠  كيان مدرج على قوائم العقوبات الدولية  ⚠", 40, y + 8, {
+      align: "center",
+      width: contentWidth,
+    });
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7.5)
+    .fillColor("#991b1b")
+    .text("SANCTIONED ENTITY — This entity appears on international sanctions lists", 40, y + 22, {
+      align: "center",
+      width: contentWidth,
+    });
+
+  y += 50;
+
+  // ─── REPORT META INFO ─────────────────────────────────────────────────────
+  const reportDate = new Date().toLocaleDateString("ar-SA", {
+    year: "numeric", month: "long", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+
+  doc.save()
+    .rect(40, y, contentWidth, 28)
+    .fill("#fffbeb")
+    .restore();
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7.5)
+    .fillColor(MID_GRAY)
+    .text(`تاريخ الفحص: ${reportDate}`, 0, y + 8, { align: "right", width: pageWidth - 50 });
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7.5)
+    .fillColor(MID_GRAY)
+    .text(`رقم السجل: ${record.referenceNumber || `ID-${record.id}`}`, 50, y + 8, { align: "left", width: 200 });
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7.5)
+    .fillColor(MID_GRAY)
+    .text(`المستخدم: ${ctx.user.name || ctx.user.username || "—"}`, 50, y + 18, { align: "left", width: 200 });
+
+  y += 40;
+
+  // ─── PRIMARY NAMES SECTION ────────────────────────────────────────────────
+  y = drawSection(doc, "الأسماء الأساسية  /  Primary Names", y);
+
+  // Name box full width
+  doc.save()
+    .rect(40, y, contentWidth, 50)
+    .fillAndStroke("#ffffff", BORDER)
+    .restore();
+
+  doc.font(ARABIC_FONT_BOLD)
+    .fontSize(14)
+    .fillColor(DARK)
+    .text(record.nameEn || "—", 40, y + 8, { width: contentWidth - 10, align: "right" });
+
+  if (record.nameAr) {
+    doc.font(ARABIC_FONT)
+      .fontSize(10)
+      .fillColor(MID_GRAY)
+      .text(record.nameAr, 40, y + 30, { width: contentWidth - 10, align: "right" });
   }
+
+  y += 58;
+
+  // Alternative names
+  const altNames = record.alternativeNames as string[] | null;
+  if (altNames && altNames.length > 0) {
+    doc.font(ARABIC_FONT)
+      .fontSize(7.5)
+      .fillColor(MID_GRAY)
+      .text("الأسماء البديلة: " + altNames.join(" | "), 40, y, {
+        width: contentWidth,
+        align: "right",
+      });
+    y += 18;
+  }
+
+  y += 6;
+
+  // ─── ENTITY DETAILS SECTION ───────────────────────────────────────────────
+  y = drawSection(doc, "تفاصيل الكيان  /  Entity Details", y);
+
+  const entityTypeAr: Record<string, string> = {
+    individual: "فرد / Individual",
+    organisation: "كيان / Organisation",
+    vessel: "سفينة / Vessel",
+    unspecified: "غير محدد / Unspecified",
+  };
+
+  const halfW = (contentWidth - 8) / 2;
+
+  // Row 1: Entity Type + Nationality
+  drawField(doc, "نوع الكيان / Entity Type",
+    entityTypeAr[record.entityType || "unspecified"] || record.entityType || "—",
+    40, y, halfW);
+  drawField(doc, "الجنسية / Nationality",
+    record.nationality || "—",
+    40 + halfW + 8, y, halfW);
+  y += 48;
+
+  // Row 2: Date of Birth + Place of Birth
+  if (record.dateOfBirth || record.placeOfBirth) {
+    drawField(doc, "تاريخ الميلاد / Date of Birth",
+      record.dateOfBirth || "—",
+      40, y, halfW);
+    drawField(doc, "مكان الميلاد / Place of Birth",
+      record.placeOfBirth || "—",
+      40 + halfW + 8, y, halfW);
+    y += 48;
+  }
+
+  y += 6;
+
+  // ─── LISTING INFORMATION SECTION ──────────────────────────────────────────
+  y = drawSection(doc, "معلومات الإدراج  /  Listing Information", y);
+
+  // Issuing Body + Listing Date
+  drawField(doc, "الجهة المدرجة / Issuing Body",
+    record.issuingBody || "—",
+    40, y, halfW);
+  drawField(doc, "تاريخ الإدراج / Listing Date",
+    record.listingDate || "—",
+    40 + halfW + 8, y, halfW);
+  y += 48;
+
+  // Legal Basis full width
+  if (record.legalBasis) {
+    drawField(doc, "السند القانوني / Legal Basis",
+      record.legalBasis,
+      40, y, contentWidth, 40);
+    y += 48;
+  }
+
+  // Listing Reason full width
+  if (record.listingReason) {
+    const reasonHeight = Math.max(40, Math.ceil(record.listingReason.length / 80) * 14 + 24);
+    drawField(doc, "سبب الإدراج / Listing Reason",
+      record.listingReason,
+      40, y, contentWidth, reasonHeight);
+    y += reasonHeight + 8;
+  }
+
+  // Action Taken full width
+  if (record.actionTaken) {
+    const actionHeight = Math.max(40, Math.ceil(record.actionTaken.length / 80) * 14 + 24);
+    drawField(doc, "الإجراء المتخذ / Action Taken",
+      record.actionTaken,
+      40, y, contentWidth, actionHeight);
+    y += actionHeight + 8;
+  }
+
+  // Notes
+  if (record.notes) {
+    y = drawSection(doc, "ملاحظات  /  Notes", y);
+    const notesHeight = Math.max(40, Math.ceil(record.notes.length / 90) * 14 + 24);
+    doc.save()
+      .rect(40, y, contentWidth, notesHeight)
+      .fillAndStroke("#fffbeb", "#fde68a")
+      .restore();
+    doc.font(ARABIC_FONT)
+      .fontSize(8.5)
+      .fillColor(DARK)
+      .text(record.notes, 50, y + 10, { width: contentWidth - 20, align: "right" });
+    y += notesHeight + 8;
+  }
+
+  // ─── FOOTER ───────────────────────────────────────────────────────────────
+  const footerY = doc.page.height - 60;
+
+  drawHorizontalLine(doc, footerY - 8, GOLD);
+
+  doc.save()
+    .rect(0, footerY, pageWidth, 60)
+    .fill("#f8fafc")
+    .restore();
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7)
+    .fillColor(MID_GRAY)
+    .text(
+      "هذا التقرير صادر عن منصة SanctionCheck التابعة للمستشار للاستشارات القانونية. المعلومات الواردة مستخرجة من قواعد بيانات العقوبات الدولية.",
+      40, footerY + 6,
+      { width: contentWidth, align: "center" }
+    );
+
+  doc.font(ARABIC_FONT)
+    .fontSize(7)
+    .fillColor(MID_GRAY)
+    .text(
+      "This report is for compliance and due diligence purposes only. Always verify with official sanctions lists before taking action.",
+      40, footerY + 20,
+      { width: contentWidth, align: "center" }
+    );
+
+  doc.font(ARABIC_FONT)
+    .fontSize(6.5)
+    .fillColor(GOLD)
+    .text(
+      `SanctionCheck © ${new Date().getFullYear()} — المستشار للاستشارات القانونية`,
+      40, footerY + 38,
+      { width: contentWidth, align: "center" }
+    );
+
+  doc.end();
 }

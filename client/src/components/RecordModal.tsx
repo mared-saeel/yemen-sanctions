@@ -4,9 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   X, User, Building2, Ship, HelpCircle, Calendar, Globe,
-  MapPin, FileText, AlertTriangle, Copy, Download
+  MapPin, FileText, Hash, AlertTriangle, Copy, ExternalLink, Download
 } from "lucide-react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface RecordModalProps {
@@ -16,6 +17,7 @@ interface RecordModalProps {
 
 export default function RecordModal({ recordId, onClose }: RecordModalProps) {
   const { data: record, isLoading } = trpc.search.getRecord.useQuery({ id: recordId });
+
   const [isDownloading, setIsDownloading] = useState(false);
 
   const copyToClipboard = (text: string, label: string) => {
@@ -27,30 +29,22 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
     if (!record) return;
     setIsDownloading(true);
     try {
-      // Call server-side PDF generation (supports Arabic fonts via Puppeteer)
-      const response = await fetch(`/api/report/sanctions/${recordId}`, {
-        method: "GET",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(err.error || `HTTP ${response.status}`);
+      const res = await fetch(`/api/report/sanctions/${recordId}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "فشل تحميل التقرير");
+        return;
       }
-
-      const blob = await response.blob();
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `sanctions-report-${record.referenceNumber || recordId}-${Date.now()}.pdf`;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success("تم تحميل التقرير بنجاح");
-    } catch (err: any) {
-      console.error("PDF error:", err);
-      toast.error(`فشل تحميل التقرير: ${err.message || "حاول مرة أخرى"}`);
+    } catch {
+      toast.error("حدث خطأ أثناء تحميل التقرير");
     } finally {
       setIsDownloading(false);
     }
@@ -179,7 +173,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
 
               {/* Listing Details */}
               <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Listing Information</h3>
+                <h3 className="text-xs font-semibold text-muted-foreibground uppercase tracking-wider">Listing Information</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: "Issuing Body", value: record.issuingBody },
@@ -244,7 +238,7 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                   {isDownloading ? (
                     <>
                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />
-                      جاري التوليد...
+                      جاري التحميل...
                     </>
                   ) : (
                     <>

@@ -1,27 +1,14 @@
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { createPool } from "mysql2";
 import { InsertUser, users, companies, auditLogs, sanctionsRecords, InsertAuditLog, InsertCompany } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
-let _pool: ReturnType<typeof createPool> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      // Use a connection pool with keepAlive to prevent connection drops
-      _pool = createPool({
-        uri: process.env.DATABASE_URL,
-        waitForConnections: true,
-        connectionLimit: 5,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 10000,
-        connectTimeout: 30000,
-      });
-      _db = drizzle(_pool);
-      console.log("[Database] Connection pool created");
+      _db = drizzle(process.env.DATABASE_URL);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
