@@ -98,3 +98,11 @@
 - [x] Ensure exact match on English name returns 100% score
 - [x] Test with "DREW PROPERTIES CO. LTD." and verify it returns exact match
 - [x] Save checkpoint
+
+## Phase 14: Fix PDF Report - Arabic/English Bilingual Support
+- [x] Diagnose PDF font issue (English text showing as boxes)
+- [x] Implement dual-font strategy: NotoSansArabic for Arabic, NotoSans for English
+- [x] Add RTL OpenType features for correct Arabic rendering in PDFKit
+- [x] Fix footer to display pure Arabic text (avoid mixed Latin/Arabic in same string)
+- [x] Test PDF generation with record ID 78619 (AHMAD HUSSAIN AL-SHARAA)
+- [x] Save checkpoint
