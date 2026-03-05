@@ -7,14 +7,20 @@
  */
 import type { Request, Response } from "express";
 import PDFDocument from "pdfkit";
+import path from "path";
+import { fileURLToPath } from "url";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
 
-// Font paths - using system Noto fonts for bilingual support
-const FONT_ARABIC = "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf";
-const FONT_ARABIC_BOLD = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf";
-const FONT_LATIN = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf";
-const FONT_LATIN_BOLD = "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf";
+// Font paths - bundled inside server/fonts/ for production compatibility
+// Use import.meta.url since this is an ES module (no __dirname available)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname_local = path.dirname(__filename);
+const FONTS_DIR = path.join(__dirname_local, "fonts");
+const FONT_ARABIC = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
+const FONT_ARABIC_BOLD = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
+const FONT_LATIN = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
+const FONT_LATIN_BOLD = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
 
 // RTL OpenType features required for correct Arabic rendering in PDFKit
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

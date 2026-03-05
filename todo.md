@@ -106,3 +106,10 @@
 - [x] Fix footer to display pure Arabic text (avoid mixed Latin/Arabic in same string)
 - [x] Test PDF generation with record ID 78619 (AHMAD HUSSAIN AL-SHARAA)
 - [x] Save checkpoint
+
+## Phase 15: Fix PDF Report in Production - Font Files Not Found
+- [x] Copy Noto font files into project directory (server/fonts/)
+- [x] Update pdf-report.ts to use relative paths to bundled fonts
+- [x] Fix __dirname ES module error (use import.meta.url instead)
+- [x] Test PDF generation with bundled fonts locally
+- [ ] Save checkpoint and publish
