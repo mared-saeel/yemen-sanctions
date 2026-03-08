@@ -154,4 +154,13 @@ Detected
 - [x] Enlarge Al-Mustashar logo in header (make it prominent)
 - [x] Add light/dark theme toggle button in header
 - [x] Adapt all sections to support both light and dark themes
-- [ ] Save checkpoint and publish
+- [x] Save checkpoint and publish
+
+## Phase 21: Fix PDF Listing Reason - Mixed Arabic/Latin Text
+- [x] Diagnose: NotoSansArabic doesn't support Latin chars (I, R, A, Q, (, )) causing boxes
+- [x] Add writeMixedText function: splits text into Arabic/Latin parts, renders each with correct font
+- [x] Update writeAutoFont to detect mixed text and call writeMixedText
+- [x] Clean up Latin part: remove brackets/parentheses that wrap Arabic text
+- [x] Increase box height for mixed-text fields to fit two lines
+- [x] Test with record 60447 (IRAQ2 / عقوبات العراق) - both parts now readable
+- [x] Save checkpoint and publish

@@ -80,7 +80,85 @@ function writeLatin(
 }
 
 /**
- * Write text using the appropriate font based on content detection
+ * Detect if text contains ANY Arabic characters (not just majority)
+ */
+function hasArabicChars(text: string): boolean {
+  if (!text) return false;
+  return /[\u0600-\u06FF\u0750-\u077F]/.test(text);
+}
+
+/**
+ * For mixed Arabic/Latin text: extract only the Arabic portion to display
+ * with Arabic font, and prepend any Latin prefix as a separate label.
+ * Strategy: if text has Arabic chars, strip out Latin-only segments and
+ * display the whole text using Arabic font (NotoSansArabic supports digits
+ * and basic punctuation). Latin letters that NotoSansArabic doesn't support
+ * will be replaced with a transliteration-safe approach.
+ *
+ * Best approach for mixed text: split into segments, render each with correct font.
+ * Since PDFKit doesn't support inline font switching, we render two lines:
+ * - Line 1: Latin portion (left-aligned, Latin font)
+ * - Line 2: Arabic portion (right-aligned, Arabic font)
+ */
+function writeMixedText(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  opts: PDFKit.Mixins.TextOptions = {},
+  bold = false,
+  fontSize = 9
+): number {
+  if (!text) return y;
+
+  const arabicFont = bold ? FONT_ARABIC_BOLD : FONT_ARABIC;
+  const latinFont = bold ? FONT_LATIN_BOLD : FONT_LATIN;
+  const width = (opts.width as number) || 400;
+
+  // Split text into Arabic and Latin segments
+  // Arabic segment: chars in Arabic Unicode range
+  // Latin segment: everything else
+  const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\s]+/g;
+  const latinRegex = /[^\u0600-\u06FF\u0750-\u077F]+/g;
+
+  const arabicPart = text.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, '').trim();
+  // Remove Arabic chars, then clean up leftover punctuation/brackets/spaces
+  const latinPart = text
+    .replace(/[\u0600-\u06FF\u0750-\u077F]/g, '')
+    .replace(/[()\[\]{}<>]/g, ' ')  // remove brackets that wrap Arabic text
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let currentY = y;
+
+  if (latinPart && arabicPart) {
+    // Mixed: render Latin first (left), then Arabic below (right)
+    doc.font(latinFont).fontSize(fontSize).fillColor('#1a1a2e');
+    doc.text(latinPart, x, currentY, { align: 'left', width, lineBreak: false });
+    currentY += fontSize + 4;
+    doc.font(arabicFont).fontSize(fontSize).fillColor('#1a1a2e');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(arabicPart, x, currentY, { align: 'right', features: ARABIC_FEATURES, width, lineBreak: false });
+    currentY += fontSize + 4;
+  } else if (arabicPart) {
+    doc.font(arabicFont).fontSize(fontSize).fillColor('#1a1a2e');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(arabicPart, x, currentY, { align: 'right', features: ARABIC_FEATURES, width, ...opts });
+    currentY += fontSize + 4;
+  } else {
+    doc.font(latinFont).fontSize(fontSize).fillColor('#1a1a2e');
+    doc.text(latinPart || text, x, currentY, { align: 'left', width, ...opts });
+    currentY += fontSize + 4;
+  }
+
+  return currentY;
+}
+
+/**
+ * Write text using the appropriate font based on content detection.
+ * For purely Arabic text: use Arabic font with RTL.
+ * For purely Latin text: use Latin font.
+ * For mixed text: use writeMixedText.
  */
 function writeAutoFont(
   doc: PDFKit.PDFDocument,
@@ -90,7 +168,14 @@ function writeAutoFont(
   opts: PDFKit.Mixins.TextOptions = {},
   bold = false
 ) {
-  if (isArabicText(text)) {
+  const arabicChars = (text.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
+  const latinChars = (text.match(/[a-zA-Z]/g) || []).length;
+  const isMixed = arabicChars > 0 && latinChars > 0;
+
+  if (isMixed) {
+    // Use mixed rendering: Latin on one line, Arabic on next
+    writeMixedText(doc, text, x, y, opts, bold);
+  } else if (arabicChars > 0) {
     doc.font(bold ? FONT_ARABIC_BOLD : FONT_ARABIC);
     writeArabic(doc, text, x, y, opts);
   } else {
@@ -431,7 +516,12 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // Listing Reason full width
     if (record.listingReason) {
-      const reasonHeight = Math.max(44, Math.ceil(record.listingReason.length / 80) * 14 + 28);
+      const arabicCharsInReason = (record.listingReason.match(/[\u0600-\u06FF]/g) || []).length;
+      const latinCharsInReason = (record.listingReason.match(/[a-zA-Z]/g) || []).length;
+      const isMixedReason = arabicCharsInReason > 0 && latinCharsInReason > 0;
+      // Add extra height for mixed text (two lines rendered)
+      const extraHeight = isMixedReason ? 18 : 0;
+      const reasonHeight = Math.max(44 + extraHeight, Math.ceil(record.listingReason.length / 80) * 14 + 28 + extraHeight);
       drawField(doc, "سبب الإدراج", "Listing Reason",
         record.listingReason,
         40, y, contentWidth, reasonHeight);
