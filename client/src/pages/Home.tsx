@@ -156,6 +156,13 @@ export default function Home() {
       ? "border-slate-600 text-slate-300 hover:bg-slate-800"
       : "border-slate-300 text-slate-600 hover:bg-slate-100",
     logoFilter: isDark ? "brightness-0 invert" : "",
+    taglineBadge: isDark
+      ? "border-amber-600/40 bg-amber-900/20 text-amber-400"
+      : "border-amber-700 bg-amber-100 text-amber-900 font-bold",
+    taglineLogoFilter: isDark ? "brightness-0 invert opacity-80" : "opacity-90",
+    aiBadge: isDark
+      ? "bg-blue-900/30 border-blue-700/30 text-blue-300"
+      : "bg-blue-100 border-blue-400 text-blue-900 font-semibold",
   };
 
   if (loading) {
@@ -252,14 +259,13 @@ export default function Home() {
         <div className="relative max-w-5xl mx-auto px-6 py-24 text-center">
 
           {/* Tagline badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-600/40 bg-amber-900/20 text-amber-400 text-xs font-semibold mb-5 tracking-wide uppercase">
-            <img src="/almustashar-logo.png" alt="" className="h-5 w-auto brightness-0 invert opacity-80" />
+          <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-semibold mb-5 tracking-wide uppercase ${theme.taglineBadge}`}>
+            <img src="/almustashar-logo.png" alt="" className={`h-5 w-auto ${theme.taglineLogoFilter}`} />
             {tx.tagline}
           </div>
-
           {/* AI badge */}
           <div className="block mb-8">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/30 border border-blue-700/30 text-blue-300 text-xs font-medium">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${theme.aiBadge}`}>
               <Zap size={10} className="fill-current" />
               {tx.badge}
             </span>

@@ -164,3 +164,10 @@ Detected
 - [x] Increase box height for mixed-text fields to fit two lines
 - [x] Test with record 60447 (IRAQ2 / عقوبات العراق) - both parts now readable
 - [x] Save checkpoint and publish
+
+## Phase 22: Fix Badge Colors in Light Theme
+- [x] Diagnose: tagline badge used text-amber-400 (light) and AI badge used text-blue-300 (light) - both unreadable on white background
+- [x] Add taglineBadge, taglineLogoFilter, aiBadge to theme object with dark/light variants
+- [x] Light theme: tagline badge = text-amber-900 on bg-amber-100, AI badge = text-blue-900 on bg-blue-100
+- [x] Verified both badges are clearly readable in light theme
+- [x] Save checkpoint and publish
