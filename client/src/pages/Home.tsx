@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   ShieldCheck, Search, Zap, Globe, Lock,
   ChevronRight, BarChart3, ArrowRight, Scale,
-  Eye, Target, Award, Users, FileText
+  Eye, Target, Award, Users, FileText, Sun, Moon
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -41,6 +41,7 @@ const t = {
       { title: "Multi-User Management", desc: "Role-based access control with company-level administration and user activity monitoring." },
     ],
     aboutTitle: "About Al-Mustashar",
+    aboutSubtitle: "Deep Legal Expertise in Service of Compliance",
     aboutDesc: "Al-Mustashar for Legal Consultancy is a specialized legal advisory firm dedicated to supporting institutions in navigating complex compliance and regulatory frameworks. Our platform reflects our commitment to delivering precise, reliable, and legally sound compliance solutions tailored to the needs of the private and banking sectors.",
     visionTitle: "Our Vision",
     visionDesc: "To be the leading compliance intelligence partner in the Arab region, empowering institutions to operate with confidence within international legal frameworks.",
@@ -90,6 +91,7 @@ const t = {
       { title: "إدارة متعددة المستخدمين", desc: "تحكم في الوصول قائم على الأدوار مع إدارة على مستوى الشركة ومراقبة نشاط المستخدمين." },
     ],
     aboutTitle: "عن المستشار",
+    aboutSubtitle: "خبرة قانونية راسخة في خدمة الامتثال",
     aboutDesc: "المستشار للاستشارات القانونية شركة استشارية قانونية متخصصة، تُعنى بمساعدة المؤسسات على التعامل مع الأطر التنظيمية والامتثالية المعقدة. تجسّد منصتنا التزامنا بتقديم حلول امتثال دقيقة وموثوقة ومتوافقة قانونياً، مُصمَّمة خصيصاً لاحتياجات القطاع الخاص والمصرفي.",
     visionTitle: "رؤيتنا",
     visionDesc: "أن نكون الشريك الاستراتيجي الرائد في مجال ذكاء الامتثال على مستوى المنطقة العربية، نُمكّن المؤسسات من العمل بثقة ضمن الأطر القانونية الدولية.",
@@ -115,6 +117,7 @@ export default function Home() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const [lang, setLang] = useState<"en" | "ar">("ar");
+  const [isDark, setIsDark] = useState(true);
   const tx = t[lang];
 
   useEffect(() => {
@@ -123,9 +126,41 @@ export default function Home() {
     }
   }, [isAuthenticated, loading, navigate]);
 
+  // Theme-aware classes
+  const theme = {
+    pageBg: isDark ? "bg-[#0b1220]" : "bg-white",
+    pageText: isDark ? "text-white" : "text-[#0f1923]",
+    headerBg: isDark ? "bg-[#0b1220] border-amber-900/30" : "bg-white border-slate-200",
+    heroBg: isDark ? "bg-[#0b1220]" : "bg-slate-50",
+    heroTitle: isDark ? "text-white" : "text-[#0f1923]",
+    heroDesc: isDark ? "text-slate-300" : "text-slate-600",
+    statCard: isDark ? "bg-white/5 border-white/10 text-white" : "bg-white border-slate-200 text-[#0f1923] shadow-sm",
+    statLabel: isDark ? "text-slate-400" : "text-slate-500",
+    sectionBg: isDark ? "bg-[#0f1923]" : "bg-slate-50",
+    sectionBorder: isDark ? "border-white/5" : "border-slate-100",
+    featureCard: isDark ? "bg-white/5 border-white/10 hover:bg-white/8" : "bg-white border-slate-100 hover:shadow-md",
+    featureTitle: isDark ? "text-white" : "text-[#0f1923]",
+    featureDesc: isDark ? "text-slate-400" : "text-slate-500",
+    aboutBg: isDark ? "bg-[#0b1220]" : "bg-white",
+    aboutTitle: isDark ? "text-white" : "text-[#0f1923]",
+    aboutDesc: isDark ? "text-slate-300" : "text-slate-600",
+    valueCard: isDark ? "bg-white/5 border-white/10" : "bg-white border-slate-100 shadow-sm",
+    valueTitle: isDark ? "text-white" : "text-[#0f1923]",
+    valueDesc: isDark ? "text-slate-400" : "text-slate-500",
+    ctaBg: isDark ? "bg-[#0f1923]" : "bg-[#0f1923]",
+    footerBg: isDark ? "bg-[#060d16]" : "bg-[#0f1923]",
+    navLangBtn: isDark
+      ? "border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
+      : "border-amber-600/40 text-amber-700 hover:bg-amber-50",
+    themeBtn: isDark
+      ? "border-slate-600 text-slate-300 hover:bg-slate-800"
+      : "border-slate-300 text-slate-600 hover:bg-slate-100",
+    logoFilter: isDark ? "brightness-0 invert" : "",
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1923] flex items-center justify-center">
+      <div className={`min-h-screen ${theme.heroBg} flex items-center justify-center`}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
           <p className="text-slate-400 text-sm">{tx.loading}</p>
@@ -135,48 +170,51 @@ export default function Home() {
   }
 
   const featureIcons = [
-    { icon: <Search size={20} />, color: "text-amber-700", bg: "bg-amber-50", border: "border-amber-100" },
-    { icon: <Zap size={20} />, color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-100" },
-    { icon: <FileText size={20} />, color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-100" },
-    { icon: <Globe size={20} />, color: "text-violet-700", bg: "bg-violet-50", border: "border-violet-100" },
-    { icon: <BarChart3 size={20} />, color: "text-rose-700", bg: "bg-rose-50", border: "border-rose-100" },
-    { icon: <Users size={20} />, color: "text-indigo-700", bg: "bg-indigo-50", border: "border-indigo-100" },
-  ];
-
-  const statIcons = [
-    { icon: <Globe size={16} />, color: "text-amber-600" },
-    { icon: <ShieldCheck size={16} />, color: "text-amber-600" },
-    { icon: <Zap size={16} />, color: "text-amber-600" },
-    { icon: <BarChart3 size={16} />, color: "text-amber-600" },
+    { icon: <Search size={20} />, color: "text-amber-600", bg: isDark ? "bg-amber-900/30" : "bg-amber-50", border: isDark ? "border-amber-800/30" : "border-amber-100" },
+    { icon: <Zap size={20} />, color: "text-blue-500", bg: isDark ? "bg-blue-900/30" : "bg-blue-50", border: isDark ? "border-blue-800/30" : "border-blue-100" },
+    { icon: <FileText size={20} />, color: "text-emerald-500", bg: isDark ? "bg-emerald-900/30" : "bg-emerald-50", border: isDark ? "border-emerald-800/30" : "border-emerald-100" },
+    { icon: <Globe size={20} />, color: "text-violet-500", bg: isDark ? "bg-violet-900/30" : "bg-violet-50", border: isDark ? "border-violet-800/30" : "border-violet-100" },
+    { icon: <BarChart3 size={20} />, color: "text-rose-500", bg: isDark ? "bg-rose-900/30" : "bg-rose-50", border: isDark ? "border-rose-800/30" : "border-rose-100" },
+    { icon: <Users size={20} />, color: "text-indigo-500", bg: isDark ? "bg-indigo-900/30" : "bg-indigo-50", border: isDark ? "border-indigo-800/30" : "border-indigo-100" },
   ];
 
   const valueIcons = [
-    <Scale size={22} className="text-amber-600" />,
-    <Lock size={22} className="text-amber-600" />,
-    <Zap size={22} className="text-amber-600" />,
+    <Scale size={22} className="text-amber-500" />,
+    <Lock size={22} className="text-amber-500" />,
+    <Zap size={22} className="text-amber-500" />,
   ];
 
   return (
-    <div className="min-h-screen bg-white text-[#1a1a2e] flex flex-col" dir={tx.dir} lang={tx.lang}>
+    <div className={`min-h-screen ${theme.pageBg} ${theme.pageText} flex flex-col transition-colors duration-300`} dir={tx.dir} lang={tx.lang}>
 
       {/* ── Header ── */}
-      <header className="bg-[#0f1923] sticky top-0 z-10 shadow-lg border-b border-amber-900/30">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+      <header className={`${theme.headerBg} sticky top-0 z-10 shadow-lg border-b transition-colors duration-300`}>
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
 
-          {/* Logo */}
-          <div className="flex items-center gap-3">
+          {/* Logo - Large & Prominent */}
+          <div className="flex items-center">
             <img
               src="/almustashar-logo.png"
               alt="Al-Mustashar"
-              className="h-12 w-auto object-contain brightness-0 invert"
+              className={`h-16 w-auto object-contain transition-all duration-300 ${theme.logoFilter}`}
             />
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Theme Toggle */}
+            <button
+              onClick={() => setIsDark(!isDark)}
+              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${theme.themeBtn}`}
+            >
+              {isDark ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+
+            {/* Language Toggle */}
             <button
               onClick={() => setLang(lang === "en" ? "ar" : "en")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-700/50 bg-transparent hover:bg-amber-900/30 text-sm font-semibold text-amber-400 transition-colors"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors ${theme.navLangBtn}`}
             >
               <Globe size={13} />
               {tx.toggleLang}
@@ -195,26 +233,27 @@ export default function Home() {
       </header>
 
       {/* ── Hero ── */}
-      <section className="relative overflow-hidden bg-[#0f1923]">
+      <section className={`relative overflow-hidden ${theme.heroBg} transition-colors duration-300`}>
         {/* Decorative background */}
-        <div className="absolute inset-0 opacity-20"
+        <div className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
             backgroundImage: "radial-gradient(ellipse at 20% 60%, oklch(0.65 0.18 60 / 0.4) 0%, transparent 55%), radial-gradient(ellipse at 80% 30%, oklch(0.55 0.12 250 / 0.3) 0%, transparent 50%)",
           }}
         />
-        {/* Subtle grid pattern */}
-        <div className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
-            backgroundSize: "60px 60px",
-          }}
-        />
+        {isDark && (
+          <div className="absolute inset-0 opacity-5 pointer-events-none"
+            style={{
+              backgroundImage: "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
+              backgroundSize: "60px 60px",
+            }}
+          />
+        )}
 
         <div className="relative max-w-5xl mx-auto px-6 py-24 text-center">
 
           {/* Tagline badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-600/40 bg-amber-900/20 text-amber-400 text-xs font-semibold mb-5 tracking-wide uppercase">
-            <img src="/almustashar-logo.png" alt="" className="h-4 w-auto brightness-0 invert opacity-80" />
+            <img src="/almustashar-logo.png" alt="" className="h-5 w-auto brightness-0 invert opacity-80" />
             {tx.tagline}
           </div>
 
@@ -227,15 +266,15 @@ export default function Home() {
           </div>
 
           {/* Title */}
-          <h1 className="text-4xl md:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight">
+          <h1 className={`text-4xl md:text-6xl font-extrabold leading-tight mb-6 tracking-tight ${theme.heroTitle}`}>
             {tx.heroTitle1}
             <span className="block text-amber-500 mt-1">{tx.heroTitle2}</span>
           </h1>
 
-          {/* Divider line */}
+          {/* Divider */}
           <div className="w-16 h-0.5 bg-amber-600 mx-auto mb-8 rounded-full" />
 
-          <p className="text-base md:text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed mb-10">
+          <p className={`text-base md:text-lg max-w-2xl mx-auto leading-relaxed mb-10 ${theme.heroDesc}`}>
             {tx.heroDesc}{" "}
             <span className="text-amber-400 font-bold">{tx.heroDescBold}</span>
             {tx.heroDescEnd}
@@ -246,7 +285,7 @@ export default function Home() {
             <Button
               onClick={() => window.location.href = "/login"}
               size="lg"
-              className="bg-amber-600 hover:bg-amber-500 text-white px-10 py-3 text-base font-bold shadow-lg hover:shadow-amber-900/40 transition-all"
+              className="bg-amber-600 hover:bg-amber-500 text-white px-10 py-3 text-base font-bold shadow-lg"
             >
               <ShieldCheck size={18} className={lang === "en" ? "mr-2" : "ml-2"} />
               {tx.startScreening}
@@ -254,7 +293,7 @@ export default function Home() {
             <Button
               variant="outline"
               size="lg"
-              className="border-slate-600 bg-transparent text-slate-200 hover:bg-slate-800 px-8 py-3 text-base font-medium"
+              className={`border px-8 py-3 text-base font-medium transition-colors ${isDark ? "border-slate-600 bg-transparent text-slate-200 hover:bg-slate-800" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
               onClick={() => window.location.href = "/login"}
             >
               {tx.requestDemo}
@@ -265,12 +304,15 @@ export default function Home() {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {tx.stats.map((stat, i) => (
-              <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-5 text-center backdrop-blur-sm hover:bg-white/8 transition-colors">
-                <div className="flex items-center justify-center mb-2">
-                  <span className={statIcons[i].color}>{statIcons[i].icon}</span>
+              <div key={i} className={`border rounded-2xl p-5 text-center transition-colors ${theme.statCard}`}>
+                <div className="flex items-center justify-center mb-2 text-amber-500">
+                  {i === 0 && <Globe size={16} />}
+                  {i === 1 && <ShieldCheck size={16} />}
+                  {i === 2 && <Zap size={16} />}
+                  {i === 3 && <BarChart3 size={16} />}
                 </div>
-                <div className="text-2xl font-extrabold text-white tracking-tight">{stat.value}</div>
-                <div className="text-xs text-slate-400 mt-1 font-medium">{stat.label}</div>
+                <div className="text-2xl font-extrabold tracking-tight">{stat.value}</div>
+                <div className={`text-xs mt-1 font-medium ${theme.statLabel}`}>{stat.label}</div>
               </div>
             ))}
           </div>
@@ -278,27 +320,27 @@ export default function Home() {
       </section>
 
       {/* ── Features ── */}
-      <section className="py-20 px-6 bg-slate-50 border-t border-slate-100">
+      <section className={`py-20 px-6 border-t transition-colors duration-300 ${theme.sectionBg} ${theme.sectionBorder}`}>
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold mb-4 uppercase tracking-wide">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-600/10 text-amber-500 text-xs font-semibold mb-4 uppercase tracking-wide border border-amber-600/20">
               <Award size={12} />
               {lang === "ar" ? "قدرات متقدمة" : "Advanced Capabilities"}
             </div>
-            <h2 className="text-3xl font-bold text-[#0f1923] tracking-tight mb-3">{tx.featuresTitle}</h2>
-            <p className="text-slate-500 max-w-xl mx-auto text-sm leading-relaxed">{tx.featuresDesc}</p>
+            <h2 className={`text-3xl font-bold tracking-tight mb-3 ${theme.aboutTitle}`}>{tx.featuresTitle}</h2>
+            <p className={`max-w-xl mx-auto text-sm leading-relaxed ${theme.featureDesc}`}>{tx.featuresDesc}</p>
           </div>
           <div className="grid md:grid-cols-3 gap-5">
             {tx.features.map((f, i) => (
               <div
                 key={i}
-                className={`bg-white border ${featureIcons[i].border} rounded-2xl p-6 hover:shadow-md transition-all duration-200 group`}
+                className={`border rounded-2xl p-6 transition-all duration-200 group ${featureIcons[i].border} ${theme.featureCard}`}
               >
                 <div className={`w-10 h-10 ${featureIcons[i].bg} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                   <span className={featureIcons[i].color}>{featureIcons[i].icon}</span>
                 </div>
-                <h3 className="font-bold text-[#0f1923] mb-2 text-[15px]">{f.title}</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">{f.desc}</p>
+                <h3 className={`font-bold mb-2 text-[15px] ${theme.featureTitle}`}>{f.title}</h3>
+                <p className={`text-sm leading-relaxed ${theme.featureDesc}`}>{f.desc}</p>
               </div>
             ))}
           </div>
@@ -306,22 +348,19 @@ export default function Home() {
       </section>
 
       {/* ── About Us ── */}
-      <section className="py-20 px-6 bg-white border-t border-slate-100">
+      <section className={`py-20 px-6 border-t transition-colors duration-300 ${theme.aboutBg} ${theme.sectionBorder}`}>
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             {/* Text */}
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0f1923] text-amber-400 text-xs font-semibold mb-5 uppercase tracking-wide">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-600 text-white text-xs font-semibold mb-5 uppercase tracking-wide">
                 <Scale size={12} />
                 {tx.aboutTitle}
               </div>
-              <h2 className="text-3xl font-bold text-[#0f1923] mb-5 leading-snug">
-                {lang === "ar"
-                  ? "خبرة قانونية راسخة في خدمة الامتثال"
-                  : "Deep Legal Expertise in Service of Compliance"
-                }
+              <h2 className={`text-3xl font-bold mb-5 leading-snug ${theme.aboutTitle}`}>
+                {tx.aboutSubtitle}
               </h2>
-              <p className="text-slate-600 leading-relaxed text-[15px]">{tx.aboutDesc}</p>
+              <p className={`leading-relaxed text-[15px] ${theme.aboutDesc}`}>{tx.aboutDesc}</p>
             </div>
 
             {/* Vision & Mission cards */}
@@ -351,20 +390,20 @@ export default function Home() {
       </section>
 
       {/* ── Values ── */}
-      <section className="py-16 px-6 bg-slate-50 border-t border-slate-100">
+      <section className={`py-16 px-6 border-t transition-colors duration-300 ${theme.sectionBg} ${theme.sectionBorder}`}>
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold text-[#0f1923] mb-2">{tx.valuesTitle}</h2>
+            <h2 className={`text-2xl font-bold mb-2 ${theme.aboutTitle}`}>{tx.valuesTitle}</h2>
             <div className="w-10 h-0.5 bg-amber-600 mx-auto rounded-full" />
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {tx.values.map((v, i) => (
-              <div key={i} className="text-center p-6 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                <div className="w-12 h-12 bg-amber-50 border border-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <div key={i} className={`text-center p-6 rounded-2xl border transition-all hover:shadow-md ${theme.valueCard}`}>
+                <div className={`w-12 h-12 ${isDark ? "bg-amber-900/30 border-amber-800/30" : "bg-amber-50 border-amber-100"} border rounded-2xl flex items-center justify-center mx-auto mb-4`}>
                   {valueIcons[i]}
                 </div>
-                <h3 className="font-bold text-[#0f1923] mb-2 text-[15px]">{v.title}</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">{v.desc}</p>
+                <h3 className={`font-bold mb-2 text-[15px] ${theme.valueTitle}`}>{v.title}</h3>
+                <p className={`text-sm leading-relaxed ${theme.valueDesc}`}>{v.desc}</p>
               </div>
             ))}
           </div>
@@ -372,7 +411,7 @@ export default function Home() {
       </section>
 
       {/* ── CTA Banner ── */}
-      <section className="py-16 px-6 bg-[#0f1923]">
+      <section className={`py-16 px-6 ${theme.ctaBg}`}>
         <div className="max-w-3xl mx-auto text-center">
           <div className="w-12 h-12 bg-amber-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ShieldCheck size={24} className="text-amber-500" />
@@ -391,12 +430,12 @@ export default function Home() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="bg-[#080e15] border-t border-white/5 py-8 px-6">
+      <footer className={`${theme.footerBg} border-t border-white/5 py-8 px-6`}>
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <img
             src="/almustashar-logo.png"
             alt="Al-Mustashar"
-            className="h-10 w-auto object-contain brightness-0 invert opacity-70"
+            className="h-12 w-auto object-contain brightness-0 invert opacity-70"
           />
           <div className="text-center">
             <p className="text-xs text-slate-500">{tx.footerText}</p>

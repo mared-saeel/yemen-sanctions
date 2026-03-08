@@ -147,4 +147,11 @@
 - [x] Add "قيمنا" section with 3 values
 - [x] Add CTA banner section
 - [x] Dark navy + amber gold professional legal design
+- [x] Save checkpoint and publish
+
+Detected
+## Phase 20: Logo & Theme Toggle
+- [x] Enlarge Al-Mustashar logo in header (make it prominent)
+- [x] Add light/dark theme toggle button in header
+- [x] Adapt all sections to support both light and dark themes
 - [ ] Save checkpoint and publish
