@@ -1,10 +1,7 @@
 /**
- * PDF Report Generator
- * Generates a professional sanctions screening report in Arabic/English
- * using PDFKit with dual fonts: NotoSansArabic (Arabic) + NotoSans (English/Latin)
- *
- * Key fix: Arabic text requires `features: ['rtla', 'arab']` for correct RTL rendering
- * Alternative names: use NotoSans (Latin) for non-Arabic names to avoid boxes
+ * PDF Report Generator — SanctionCheck Match Details Report
+ * Professional design inspired by LSEG World-Check One format
+ * Bilingual (Arabic/English) with proper RTL rendering
  */
 import type { Request, Response } from "express";
 import PDFDocument from "pdfkit";
@@ -14,598 +11,521 @@ import { fileURLToPath } from "url";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
 
-// Font paths - bundled inside server/fonts/ for production compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname_local = path.dirname(__filename);
 const FONTS_DIR = path.join(__dirname_local, "fonts");
-const FONT_ARABIC = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
-const FONT_ARABIC_BOLD = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
-const FONT_LATIN = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
-const FONT_LATIN_BOLD = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
-const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
+const FONT_ARABIC        = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
+const FONT_ARABIC_BOLD   = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
+const FONT_LATIN         = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
+const FONT_LATIN_BOLD    = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
+const LOGO_PATH          = path.join(FONTS_DIR, "logo.png");
 
-// RTL OpenType features required for correct Arabic rendering in PDFKit
+// RTL OpenType features
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ARABIC_FEATURES: any[] = ['rtla', 'arab', 'init', 'medi', 'fina', 'isol'];
+const AR: any[] = ['rtla', 'arab', 'init', 'medi', 'fina', 'isol'];
 
-// Brand colors
-const GOLD = "#C17F3E";
-const DARK = "#1a1a2e";
-const LIGHT_GRAY = "#f8f9fa";
-const MID_GRAY = "#6c757d";
-const BORDER = "#e2e8f0";
-const RED_ALERT = "#dc2626";
+// ── Palette ──────────────────────────────────────────────────────────────────
+const BLUE_HEADER  = "#1B3A6B";   // deep navy (like LSEG header)
+const BLUE_SECTION = "#1B3A6B";   // section title background
+const BLUE_LINK    = "#1B5EBF";   // hyperlink-style blue for names
+const GOLD         = "#C17F3E";   // Al-Mustashar gold accent
+const ROW_ALT      = "#F2F5FA";   // alternating row tint
+const ROW_HEADER   = "#D9E3F0";   // table column header
+const TEXT_DARK    = "#1A1A2E";
+const TEXT_MID     = "#5A6A7A";
+const TEXT_LIGHT   = "#8A9BB0";
+const RED_ALERT    = "#C0392B";
+const WHITE        = "#FFFFFF";
+const BORDER_COLOR = "#C8D4E3";
 
-/**
- * Detect if text is primarily Arabic (RTL)
- */
-function isArabicText(text: string): boolean {
-  if (!text) return false;
-  const arabicChars = (text.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
-  return arabicChars > text.length * 0.3;
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Write Arabic text with proper RTL features
- */
-function writeArabic(
-  doc: PDFKit.PDFDocument,
-  text: string,
-  x: number,
-  y: number,
-  opts: PDFKit.Mixins.TextOptions = {}
-) {
+function hasArabic(t: string) { return /[\u0600-\u06FF]/.test(t); }
+function hasLatin(t: string)  { return /[a-zA-Z]/.test(t); }
+
+/** Write Arabic text with RTL features */
+function ar(doc: PDFKit.PDFDocument, text: string, x: number, y: number, opts: PDFKit.Mixins.TextOptions = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (doc as any).text(text, x, y, {
-    align: "right",
-    features: ARABIC_FEATURES,
-    ...opts,
-  });
+  (doc as any).text(text, x, y, { align: "right", features: AR, ...opts });
+}
+
+/** Write Latin text */
+function lat(doc: PDFKit.PDFDocument, text: string, x: number, y: number, opts: PDFKit.Mixins.TextOptions = {}) {
+  doc.text(text, x, y, { align: "left", ...opts });
 }
 
 /**
- * Write Latin/English text
+ * Smart text renderer: detects mixed Arabic+Latin and renders in two lines.
+ * Returns the Y position after rendering.
  */
-function writeLatin(
-  doc: PDFKit.PDFDocument,
-  text: string,
-  x: number,
-  y: number,
-  opts: PDFKit.Mixins.TextOptions = {}
-) {
-  doc.text(text, x, y, {
-    align: "left",
-    ...opts,
-  });
-}
-
-/**
- * Detect if text contains ANY Arabic characters (not just majority)
- */
-function hasArabicChars(text: string): boolean {
-  if (!text) return false;
-  return /[\u0600-\u06FF\u0750-\u077F]/.test(text);
-}
-
-/**
- * For mixed Arabic/Latin text: extract only the Arabic portion to display
- * with Arabic font, and prepend any Latin prefix as a separate label.
- * Strategy: if text has Arabic chars, strip out Latin-only segments and
- * display the whole text using Arabic font (NotoSansArabic supports digits
- * and basic punctuation). Latin letters that NotoSansArabic doesn't support
- * will be replaced with a transliteration-safe approach.
- *
- * Best approach for mixed text: split into segments, render each with correct font.
- * Since PDFKit doesn't support inline font switching, we render two lines:
- * - Line 1: Latin portion (left-aligned, Latin font)
- * - Line 2: Arabic portion (right-aligned, Arabic font)
- */
-function writeMixedText(
+function autoText(
   doc: PDFKit.PDFDocument,
   text: string,
   x: number,
   y: number,
   opts: PDFKit.Mixins.TextOptions = {},
   bold = false,
-  fontSize = 9
+  size = 9
 ): number {
   if (!text) return y;
-
-  const arabicFont = bold ? FONT_ARABIC_BOLD : FONT_ARABIC;
-  const latinFont = bold ? FONT_LATIN_BOLD : FONT_LATIN;
-  const width = (opts.width as number) || 400;
-
-  // Split text into Arabic and Latin segments
-  // Arabic segment: chars in Arabic Unicode range
-  // Latin segment: everything else
-  const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\s]+/g;
-  const latinRegex = /[^\u0600-\u06FF\u0750-\u077F]+/g;
-
-  const arabicPart = text.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, '').trim();
-  // Remove Arabic chars, then clean up leftover punctuation/brackets/spaces
-  const latinPart = text
-    .replace(/[\u0600-\u06FF\u0750-\u077F]/g, '')
-    .replace(/[()\[\]{}<>]/g, ' ')  // remove brackets that wrap Arabic text
-    .replace(/\s+/g, ' ')
+  const af = bold ? FONT_ARABIC_BOLD : FONT_ARABIC;
+  const lf = bold ? FONT_LATIN_BOLD  : FONT_LATIN;
+  const w  = (opts.width as number) || 400;
+  const arabicPart = text.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, "").trim();
+  const latinPart  = text
+    .replace(/[\u0600-\u06FF\u0750-\u077F]/g, "")
+    .replace(/[()\[\]{}<>]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 
-  let currentY = y;
-
-  if (latinPart && arabicPart) {
-    // Mixed: render Latin first (left), then Arabic below (right)
-    doc.font(latinFont).fontSize(fontSize).fillColor('#1a1a2e');
-    doc.text(latinPart, x, currentY, { align: 'left', width, lineBreak: false });
-    currentY += fontSize + 4;
-    doc.font(arabicFont).fontSize(fontSize).fillColor('#1a1a2e');
+  let cy = y;
+  if (arabicPart && latinPart) {
+    doc.font(lf).fontSize(size).fillColor(TEXT_DARK);
+    doc.text(latinPart, x, cy, { align: "left", width: w, lineBreak: false });
+    cy += size + 4;
+    doc.font(af).fontSize(size).fillColor(TEXT_DARK);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (doc as any).text(arabicPart, x, currentY, { align: 'right', features: ARABIC_FEATURES, width, lineBreak: false });
-    currentY += fontSize + 4;
+    (doc as any).text(arabicPart, x, cy, { align: "right", features: AR, width: w, lineBreak: false });
+    cy += size + 4;
   } else if (arabicPart) {
-    doc.font(arabicFont).fontSize(fontSize).fillColor('#1a1a2e');
+    doc.font(af).fontSize(size).fillColor(TEXT_DARK);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (doc as any).text(arabicPart, x, currentY, { align: 'right', features: ARABIC_FEATURES, width, ...opts });
-    currentY += fontSize + 4;
+    (doc as any).text(arabicPart, x, cy, { align: "right", features: AR, width: w, ...opts });
+    cy += size + 4;
   } else {
-    doc.font(latinFont).fontSize(fontSize).fillColor('#1a1a2e');
-    doc.text(latinPart || text, x, currentY, { align: 'left', width, ...opts });
-    currentY += fontSize + 4;
+    doc.font(lf).fontSize(size).fillColor(TEXT_DARK);
+    doc.text(latinPart || text, x, cy, { align: "left", width: w, ...opts });
+    cy += size + 4;
   }
+  return cy;
+}
 
-  return currentY;
+/** Draw a horizontal rule */
+function hRule(doc: PDFKit.PDFDocument, y: number, x1 = 40, x2?: number, color = BORDER_COLOR, lw = 0.5) {
+  const pw = doc.page.width;
+  doc.save().strokeColor(color).lineWidth(lw)
+    .moveTo(x1, y).lineTo(x2 ?? pw - 40, y).stroke().restore();
 }
 
 /**
- * Write text using the appropriate font based on content detection.
- * For purely Arabic text: use Arabic font with RTL.
- * For purely Latin text: use Latin font.
- * For mixed text: use writeMixedText.
+ * Draw a section header bar (like LSEG "CASE AND COMPARISON DATA")
  */
-function writeAutoFont(
+function sectionHeader(doc: PDFKit.PDFDocument, titleEn: string, titleAr: string, y: number, pageWidth: number): number {
+  const cw = pageWidth - 80;
+  doc.save().rect(40, y, cw, 20).fill(BLUE_SECTION).restore();
+  doc.font(FONT_LATIN_BOLD).fontSize(8).fillColor(WHITE);
+  lat(doc, titleEn, 46, y + 6, { width: cw / 2 });
+  doc.font(FONT_ARABIC_BOLD).fontSize(8).fillColor(WHITE);
+  ar(doc, titleAr, 40, y + 6, { width: cw - 6 });
+  return y + 26;
+}
+
+/**
+ * Draw a two-column table row.
+ * labelCol: left label cell width
+ * valueCol: right value cell width
+ */
+function tableRow(
   doc: PDFKit.PDFDocument,
-  text: string,
-  x: number,
-  y: number,
-  opts: PDFKit.Mixins.TextOptions = {},
-  bold = false
-) {
-  const arabicChars = (text.match(/[\u0600-\u06FF\u0750-\u077F]/g) || []).length;
-  const latinChars = (text.match(/[a-zA-Z]/g) || []).length;
-  const isMixed = arabicChars > 0 && latinChars > 0;
-
-  if (isMixed) {
-    // Use mixed rendering: Latin on one line, Arabic on next
-    writeMixedText(doc, text, x, y, opts, bold);
-  } else if (arabicChars > 0) {
-    doc.font(bold ? FONT_ARABIC_BOLD : FONT_ARABIC);
-    writeArabic(doc, text, x, y, opts);
-  } else {
-    doc.font(bold ? FONT_LATIN_BOLD : FONT_LATIN);
-    writeLatin(doc, text, x, y, opts);
-  }
-}
-
-function drawHorizontalLine(doc: PDFKit.PDFDocument, y: number, color = BORDER) {
-  doc.save()
-    .strokeColor(color)
-    .lineWidth(0.5)
-    .moveTo(40, y)
-    .lineTo(doc.page.width - 40, y)
-    .stroke()
-    .restore();
-}
-
-function drawSection(doc: PDFKit.PDFDocument, titleAr: string, titleEn: string, y: number): number {
-  const pageWidth = doc.page.width;
-  const contentWidth = pageWidth - 80;
-
-  doc.save()
-    .rect(40, y, contentWidth, 24)
-    .fill("#f1f5f9")
-    .restore();
-
-  // Arabic title (right)
-  doc.font(FONT_ARABIC_BOLD).fontSize(8).fillColor(DARK);
-  writeArabic(doc, titleAr, 40, y + 7, { width: contentWidth });
-
-  // English title (left)
-  doc.font(FONT_LATIN).fontSize(7.5).fillColor(MID_GRAY);
-  writeLatin(doc, titleEn, 50, y + 8, { width: 200 });
-
-  return y + 30;
-}
-
-function drawField(
-  doc: PDFKit.PDFDocument,
-  labelAr: string,
   labelEn: string,
+  labelAr: string,
   value: string,
   x: number,
   y: number,
-  width: number,
-  height = 44
-): void {
-  // Box background
-  doc.save()
-    .rect(x, y, width, height)
-    .fillAndStroke(LIGHT_GRAY, BORDER)
+  labelW: number,
+  valueW: number,
+  rowH: number,
+  shade: boolean
+): number {
+  const totalW = labelW + valueW;
+
+  // Row background
+  if (shade) {
+    doc.save().rect(x, y, totalW, rowH).fill(ROW_ALT).restore();
+  } else {
+    doc.save().rect(x, y, totalW, rowH).fill(WHITE).restore();
+  }
+
+  // Cell borders
+  doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4)
+    .rect(x, y, totalW, rowH).stroke()
+    .moveTo(x + labelW, y).lineTo(x + labelW, y + rowH).stroke()
     .restore();
 
-  // Arabic label (right)
-  doc.font(FONT_ARABIC).fontSize(6.5).fillColor(MID_GRAY);
-  writeArabic(doc, labelAr, x + 6, y + 5, { width: width - 12 });
+  // Label cell: English top, Arabic bottom
+  doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+  lat(doc, labelEn, x + 5, y + 5, { width: labelW - 10, lineBreak: false });
+  doc.font(FONT_ARABIC).fontSize(7).fillColor(TEXT_MID);
+  ar(doc, labelAr, x, y + 16, { width: labelW - 5, lineBreak: false });
 
-  // English label (left)
-  doc.font(FONT_LATIN).fontSize(6).fillColor(MID_GRAY);
-  writeLatin(doc, labelEn, x + 6, y + 6, { width: width - 12 });
+  // Value cell: smart font detection
+  const vx = x + labelW + 5;
+  const vw = valueW - 10;
+  const display = value || "—";
+  doc.fontSize(8.5);
 
-  // Value - auto-detect font based on content
-  const displayValue = value || "—";
-  doc.fontSize(9).fillColor(DARK);
-  writeAutoFont(doc, displayValue, x + 6, y + 20, { width: width - 12 }, true);
+  if (hasArabic(display) && hasLatin(display)) {
+    // Mixed: two lines
+    const arabicPart = display.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, "").trim();
+    const latinPart  = display.replace(/[\u0600-\u06FF\u0750-\u077F]/g, "").replace(/[()\[\]{}<>]/g, " ").replace(/\s+/g, " ").trim();
+    doc.font(FONT_LATIN_BOLD).fontSize(8.5).fillColor(TEXT_DARK);
+    lat(doc, latinPart, vx, y + 5, { width: vw, lineBreak: false });
+    doc.font(FONT_ARABIC_BOLD).fontSize(8.5).fillColor(TEXT_DARK);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(arabicPart, x + labelW, y + 18, { align: "right", features: AR, width: valueW - 5, lineBreak: false });
+  } else if (hasArabic(display)) {
+    doc.font(FONT_ARABIC_BOLD).fontSize(8.5).fillColor(TEXT_DARK);
+    ar(doc, display, x + labelW, y + 5, { width: valueW - 5, lineBreak: false });
+  } else {
+    doc.font(FONT_LATIN_BOLD).fontSize(8.5).fillColor(TEXT_DARK);
+    lat(doc, display, vx, y + 5, { width: vw, lineBreak: false });
+  }
+
+  return y + rowH;
 }
 
-export async function handleGeneratePdfReport(req: Request, res: Response) {
+/** Draw a full-width text row (for long values like listing reason) */
+function tableRowFull(
+  doc: PDFKit.PDFDocument,
+  labelEn: string,
+  labelAr: string,
+  value: string,
+  x: number,
+  y: number,
+  totalW: number,
+  shade: boolean
+): number {
+  const labelH = 22;
+  const display = value || "—";
+
+  // Estimate value height
+  const isMixed = hasArabic(display) && hasLatin(display);
+  const lines = isMixed ? 2 : Math.max(1, Math.ceil(display.length / 85));
+  const valueH = lines * 13 + 10;
+  const rowH = labelH + valueH;
+
+  // Background
+  doc.save().rect(x, y, totalW, rowH).fill(shade ? ROW_ALT : WHITE).restore();
+  doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4).rect(x, y, totalW, rowH).stroke().restore();
+
+  // Label row
+  doc.save().rect(x, y, totalW, labelH).fill(ROW_HEADER).restore();
+  doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+  lat(doc, labelEn, x + 5, y + 4, { width: totalW / 2, lineBreak: false });
+  doc.font(FONT_ARABIC_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+  ar(doc, labelAr, x, y + 4, { width: totalW - 5, lineBreak: false });
+
+  // Value
+  const vy = y + labelH + 4;
+  autoText(doc, display, x + 5, vy, { width: totalW - 10 }, false, 8.5);
+
+  return y + rowH + 4;
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
+async function _handleGeneratePdfReport(req: Request, res: Response) {
   try {
-    // Auth check
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
-    if (!ctx.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
 
     const recordId = parseInt(req.params.id);
-    if (isNaN(recordId)) {
-      return res.status(400).json({ error: "Invalid record ID" });
-    }
+    if (isNaN(recordId)) return res.status(400).json({ error: "Invalid record ID" });
 
     const record = await getRecordById(recordId);
-    if (!record) {
-      return res.status(404).json({ error: "Record not found" });
-    }
+    if (!record) return res.status(404).json({ error: "Record not found" });
 
-    // Check if logo exists
     const logoExists = fs.existsSync(LOGO_PATH);
 
-    // Generate PDF
     const doc = new PDFDocument({
       size: "A4",
-      margins: { top: 40, bottom: 40, left: 40, right: 40 },
+      margins: { top: 40, bottom: 60, left: 40, right: 40 },
       bufferPages: true,
       info: {
-        Title: `Sanctions Screening Report - ${record.nameEn}`,
+        Title: `SanctionCheck Match Details Report — ${record.nameEn}`,
         Author: "Al-Mustashar Legal Consultancy",
-        Subject: "Sanctions Screening Report",
+        Subject: "Sanctions Screening Match Details Report",
         Creator: "SanctionCheck Platform",
       },
     });
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="sanctions-report-${recordId}-${Date.now()}.pdf"`
-    );
+    res.setHeader("Content-Disposition",
+      `attachment; filename="sanctions-report-${recordId}-${Date.now()}.pdf"`);
     doc.pipe(res);
 
-    const pageWidth = doc.page.width;
-    const contentWidth = pageWidth - 80;
-    let y = 40;
+    const pageWidth  = doc.page.width;   // 595
+    const cw         = pageWidth - 80;   // content width
+    let y            = 40;
 
-    // ─── HEADER BANNER ────────────────────────────────────────────────────────
-    // Dark background for header
-    doc.save()
-      .rect(0, 0, pageWidth, 90)
-      .fill(DARK)
-      .restore();
+    // ── HEADER ────────────────────────────────────────────────────────────────
+    // Top navy bar
+    doc.save().rect(0, 0, pageWidth, 72).fill(BLUE_HEADER).restore();
 
-    // Gold accent line at bottom of header
-    doc.save()
-      .rect(0, 90, pageWidth, 4)
-      .fill(GOLD)
-      .restore();
-
-    // Logo on the LEFT side
+    // Logo (left)
     if (logoExists) {
-      // Logo: white background circle/box behind it for contrast
-      doc.save()
-        .rect(30, 8, 74, 74)
-        .fill("#ffffff")
-        .restore();
-      doc.image(LOGO_PATH, 32, 10, { width: 70, height: 70 });
-    } else {
-      // Fallback text logo
-      doc.font(FONT_LATIN_BOLD).fontSize(18).fillColor("#ffffff");
-      writeLatin(doc, "SanctionCheck", 40, 20, { width: 200 });
-      doc.font(FONT_LATIN).fontSize(8).fillColor("#94a3b8");
-      writeLatin(doc, "Sanctions Screening Platform", 40, 44, { width: 200 });
+      doc.save().rect(28, 8, 56, 56).fill(WHITE).restore();
+      doc.image(LOGO_PATH, 30, 10, { width: 52, height: 52 });
     }
 
-    // Arabic title (right side) - Arabic font
-    doc.font(FONT_ARABIC_BOLD).fontSize(16).fillColor("#ffffff");
-    writeArabic(doc, "تقرير فحص العقوبات الدولية", 0, 18, { width: pageWidth - 40 });
+    // Title block (right of logo)
+    doc.font(FONT_LATIN_BOLD).fontSize(13).fillColor(WHITE);
+    lat(doc, "Al-Mustashar Legal Consultancy", 92, 12, { width: cw - 52 });
+    doc.font(FONT_ARABIC_BOLD).fontSize(11).fillColor(GOLD);
+    ar(doc, "المستشار للاستشارات القانونية", 40, 12, { width: cw });
+    doc.font(FONT_LATIN_BOLD).fontSize(9.5).fillColor("#CBD5E1");
+    lat(doc, "SANCTIONCHECK MATCH DETAILS REPORT", 92, 34, { width: cw - 52 });
+    doc.font(FONT_ARABIC).fontSize(8).fillColor("#94A3B8");
+    ar(doc, "تقرير تفاصيل تطابق فحص العقوبات", 40, 36, { width: cw });
 
-    doc.font(FONT_ARABIC).fontSize(9).fillColor(GOLD);
-    writeArabic(doc, "المستشار للاستشارات القانونية", 0, 44, { width: pageWidth - 40 });
+    // "Confidential" badge (top right)
+    doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor("#FCA5A5");
+    lat(doc, "CONFIDENTIAL", pageWidth - 120, 10, { width: 80, align: "right" });
 
-    // Platform name below Arabic subtitle
-    doc.font(FONT_LATIN).fontSize(7.5).fillColor("#94a3b8");
-    writeLatin(doc, "SanctionCheck  |  Sanctions Screening Platform", 110, 65, { width: pageWidth - 150 });
+    // Gold accent line
+    doc.save().rect(0, 72, pageWidth, 3).fill(GOLD).restore();
 
-    y = 110;
+    y = 82;
 
-    // ─── ALERT BANNER ─────────────────────────────────────────────────────────
-    doc.save()
-      .rect(40, y, contentWidth, 38)
-      .fillAndStroke("#fef2f2", "#fecaca")
-      .restore();
+    // ── RECORD UID ROW ────────────────────────────────────────────────────────
+    doc.save().rect(40, y, cw, 28).fill("#EEF3FB").restore();
+    doc.save().strokeColor(BORDER_COLOR).lineWidth(0.5).rect(40, y, cw, 28).stroke().restore();
 
-    doc.save()
-      .rect(40, y, 4, 38)
-      .fill(RED_ALERT)
-      .restore();
+    const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
+    doc.font(FONT_LATIN_BOLD).fontSize(8).fillColor(TEXT_MID);
+    lat(doc, "RECORD UID:", 46, y + 5, { width: 90, lineBreak: false });
+    doc.font(FONT_LATIN_BOLD).fontSize(9).fillColor(BLUE_LINK);
+    lat(doc, uid, 110, y + 4, { width: 200, lineBreak: false });
 
-    // Arabic alert
-    doc.font(FONT_ARABIC_BOLD).fontSize(10).fillColor(RED_ALERT);
-    writeArabic(doc, "كيان مدرج على قوائم العقوبات الدولية", 40, y + 6, {
-      align: "center",
-      width: contentWidth,
+    // Screened by + date (right side)
+    const screenDate = new Date();
+    const dateStr = screenDate.toLocaleDateString("en-GB", {
+      day: "2-digit", month: "short", year: "numeric"
     });
-
-    // English alert
-    doc.font(FONT_LATIN).fontSize(7.5).fillColor("#991b1b");
-    writeLatin(doc, "SANCTIONED ENTITY — This entity appears on international sanctions lists", 40, y + 23, {
-      align: "center",
-      width: contentWidth,
+    const timeStr = screenDate.toLocaleTimeString("en-GB", {
+      hour: "2-digit", minute: "2-digit", hour12: false
     });
-
-    y += 52;
-
-    // ─── REPORT META INFO ─────────────────────────────────────────────────────
-    const reportDate = new Date().toLocaleDateString("ar-SA", {
-      year: "numeric", month: "long", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-
-    doc.save()
-      .rect(40, y, contentWidth, 30)
-      .fill("#fffbeb")
-      .restore();
-
-    // Date (Arabic)
-    doc.font(FONT_ARABIC).fontSize(7.5).fillColor(MID_GRAY);
-    writeArabic(doc, `تاريخ الفحص: ${reportDate}`, 0, y + 10, { width: pageWidth - 50 });
-
-    // Record ID (Latin)
-    doc.font(FONT_LATIN).fontSize(7.5).fillColor(MID_GRAY);
-    writeLatin(doc, `Record ID: ${record.referenceNumber || `ID-${record.id}`}`, 50, y + 5, { width: 200 });
-
-    // User
     const userName = ctx.user.name || (ctx.user as { username?: string }).username || "—";
-    const isArabicName = isArabicText(userName);
-    if (isArabicName) {
-      doc.font(FONT_ARABIC).fontSize(7.5).fillColor(MID_GRAY);
-      writeArabic(doc, `المستخدم: ${userName}`, 50, y + 18, { width: 200 });
-    } else {
-      doc.font(FONT_LATIN).fontSize(7.5).fillColor(MID_GRAY);
-      writeLatin(doc, `User: ${userName}`, 50, y + 18, { width: 200 });
-    }
 
-    y += 44;
+    doc.font(FONT_LATIN).fontSize(7.5).fillColor(TEXT_MID);
+    lat(doc, `Screened: ${dateStr}  ${timeStr}`, pageWidth - 280, y + 5, { width: 200, align: "right", lineBreak: false });
+    lat(doc, `By: ${userName}`, pageWidth - 280, y + 16, { width: 200, align: "right", lineBreak: false });
 
-    // ─── PRIMARY NAMES SECTION ────────────────────────────────────────────────
-    y = drawSection(doc, "الأسماء الأساسية", "Primary Names", y);
+    y += 36;
 
-    // Name box full width
-    doc.save()
-      .rect(40, y, contentWidth, 56)
-      .fillAndStroke("#ffffff", BORDER)
+    // ── CASE AND COMPARISON DATA ──────────────────────────────────────────────
+    y = sectionHeader(doc, "CASE AND COMPARISON DATA", "بيانات الحالة والمقارنة", y, pageWidth);
+
+    // Column headers
+    const col1W = 100;
+    const col2W = (cw - col1W) / 2;
+    const col3W = (cw - col1W) / 2;
+
+    doc.save().rect(40, y, cw, 18).fill(ROW_HEADER).restore();
+    doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4).rect(40, y, cw, 18).stroke()
+      .moveTo(40 + col1W, y).lineTo(40 + col1W, y + 18).stroke()
+      .moveTo(40 + col1W + col2W, y).lineTo(40 + col1W + col2W, y + 18).stroke()
       .restore();
 
-    // English name (Latin font - large)
-    doc.font(FONT_LATIN_BOLD).fontSize(14).fillColor(DARK);
-    writeLatin(doc, record.nameEn || "—", 46, y + 8, { width: contentWidth - 12 });
+    doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+    lat(doc, "", 46, y + 5, { width: col1W - 10, lineBreak: false });
+    lat(doc, "Client / Submitted Data", 40 + col1W + 5, y + 5, { width: col2W - 10, lineBreak: false });
+    lat(doc, "SanctionCheck Data", 40 + col1W + col2W + 5, y + 5, { width: col3W - 10, lineBreak: false });
 
-    // Arabic name (Arabic font)
+    y += 18;
+
+    // Name comparison row
+    const submittedName = (req.query.submittedName as string) || record.nameEn || "—";
+    const rowH1 = 28;
+    doc.save().rect(40, y, cw, rowH1).fill(ROW_ALT).restore();
+    doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4).rect(40, y, cw, rowH1).stroke()
+      .moveTo(40 + col1W, y).lineTo(40 + col1W, y + rowH1).stroke()
+      .moveTo(40 + col1W + col2W, y).lineTo(40 + col1W + col2W, y + rowH1).stroke()
+      .restore();
+
+    doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+    lat(doc, "Name", 46, y + 10, { width: col1W - 10, lineBreak: false });
+
+    // Submitted name with checkmark
+    doc.font(FONT_LATIN).fontSize(8).fillColor(TEXT_DARK);
+    lat(doc, submittedName, 40 + col1W + 5, y + 5, { width: col2W - 10, lineBreak: false });
     if (record.nameAr) {
-      doc.font(FONT_ARABIC).fontSize(11).fillColor(MID_GRAY);
-      writeArabic(doc, record.nameAr, 40, y + 32, { width: contentWidth - 10 });
+      doc.font(FONT_ARABIC).fontSize(7.5).fillColor(TEXT_MID);
+      ar(doc, record.nameAr, 40 + col1W, y + 16, { width: col2W - 5, lineBreak: false });
     }
 
-    y += 64;
+    // Matched name (SanctionCheck data)
+    doc.font(FONT_LATIN_BOLD).fontSize(8).fillColor(BLUE_LINK);
+    lat(doc, record.nameEn || "—", 40 + col1W + col2W + 5, y + 5, { width: col3W - 10, lineBreak: false });
+    if (record.nameAr) {
+      doc.font(FONT_ARABIC).fontSize(7.5).fillColor(TEXT_MID);
+      ar(doc, record.nameAr, 40 + col1W + col2W, y + 16, { width: col3W - 5, lineBreak: false });
+    }
 
-    // Alternative names - use auto font detection per name to avoid boxes
+    y += rowH1 + 8;
+
+    // ── SCREENING METADATA ────────────────────────────────────────────────────
+    y = sectionHeader(doc, "SCREENING INFORMATION", "معلومات الفحص", y, pageWidth);
+
+    const halfW = (cw - 4) / 2;
+
+    // Row: Screened By + Date Screened
+    let ry = y;
+    ry = tableRow(doc, "Screened By", "فحص بواسطة", userName, 40, ry, 120, halfW - 120, 32, false);
+    // Date + time (right column)
+    tableRow(doc, "Date & Time Screened", "تاريخ ووقت الفحص",
+      `${dateStr}  ${timeStr}`, 40 + halfW + 4, y, 140, halfW - 140, 32, false);
+    y = ry;
+
+    // Row: Platform + Record ID
+    ry = tableRow(doc, "Platform", "المنصة", "SanctionCheck — Al-Mustashar", 40, y, 120, halfW - 120, 28, true);
+    tableRow(doc, "Record ID", "رقم السجل", uid, 40 + halfW + 4, y, 140, halfW - 140, 28, true);
+    y = ry + 8;
+
+    // ── KEY DATA ──────────────────────────────────────────────────────────────
+    y = sectionHeader(doc, "KEY DATA", "البيانات الأساسية", y, pageWidth);
+
+    const entityTypeMap: Record<string, string> = {
+      individual: "Individual", organisation: "Organisation",
+      vessel: "Vessel", unspecified: "Unspecified",
+    };
+
+    let shade = false;
+    const rows: [string, string, string][] = [
+      ["Dataset / Programme", "البرنامج / القائمة", record.issuingBody || "—"],
+      ["Category", "الفئة", record.entityType ? entityTypeMap[record.entityType] || record.entityType : "—"],
+      ["Entity Type", "نوع الكيان", record.entityType ? entityTypeMap[record.entityType] || record.entityType : "—"],
+      ["Name", "الاسم", record.nameEn || "—"],
+      ["Nationality / Citizenship", "الجنسية", record.nationality || "—"],
+      ["Date of Birth", "تاريخ الميلاد", record.dateOfBirth || "—"],
+      ["Place of Birth", "مكان الميلاد", record.placeOfBirth || "—"],
+      ["Listing Date", "تاريخ الإدراج", record.listingDate || "—"],
+      ["Issuing Body", "الجهة المُدرِجة", record.issuingBody || "—"],
+    ];
+
+    for (const [en, ar_label, val] of rows) {
+      y = tableRow(doc, en, ar_label, val, 40, y, 160, cw - 160, 30, shade);
+      shade = !shade;
+    }
+
+    y += 8;
+
+    // ── LISTING REASON (full width) ───────────────────────────────────────────
+    if (record.listingReason) {
+      y = sectionHeader(doc, "LISTING REASON", "سبب الإدراج", y, pageWidth);
+      y = tableRowFull(doc, "Listing Reason", "سبب الإدراج", record.listingReason, 40, y, cw, false);
+      y += 4;
+    }
+
+    // ── LEGAL BASIS ───────────────────────────────────────────────────────────
+    if (record.legalBasis) {
+      y = sectionHeader(doc, "LEGAL BASIS", "السند القانوني", y, pageWidth);
+      y = tableRowFull(doc, "Legal Basis", "السند القانوني", record.legalBasis, 40, y, cw, false);
+      y += 4;
+    }
+
+    // ── ALIASES ───────────────────────────────────────────────────────────────
     const altNames = record.alternativeNames as string[] | null;
     if (altNames && altNames.length > 0) {
-      // Filter out names that have unsupported characters (keep only Arabic and Latin)
-      const cleanNames = altNames.map(name => {
-        // Replace unsupported characters with space
-        return name.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, '');
-      }).filter(name => name.trim().length > 0);
+      const cleanNames = altNames
+        .map(n => n.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, ""))
+        .filter(n => n.trim().length > 0);
 
       if (cleanNames.length > 0) {
-        // Label
-        doc.font(FONT_ARABIC).fontSize(7).fillColor(MID_GRAY);
-        writeArabic(doc, "الأسماء البديلة:", 40, y, { width: contentWidth });
-        y += 14;
+        y = sectionHeader(doc, "ALIASES", "الأسماء البديلة", y, pageWidth);
 
-        // Each name on its own with correct font
-        const namesPerRow = 3;
-        const nameWidth = (contentWidth - (namesPerRow - 1) * 6) / namesPerRow;
+        // Column headers
+        doc.save().rect(40, y, cw, 18).fill(ROW_HEADER).restore();
+        doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4).rect(40, y, cw, 18).stroke().restore();
+        doc.font(FONT_LATIN_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+        lat(doc, "Aliases", 46, y + 5, { width: cw / 2, lineBreak: false });
+        doc.font(FONT_ARABIC_BOLD).fontSize(7.5).fillColor(TEXT_DARK);
+        ar(doc, "الأسماء البديلة والأسماء بالأحرف الأصلية", 40, y + 5, { width: cw - 6, lineBreak: false });
+        y += 18;
 
-        for (let i = 0; i < Math.min(cleanNames.length, 12); i++) {
-          const col = i % namesPerRow;
-          const row = Math.floor(i / namesPerRow);
-          const nx = 40 + col * (nameWidth + 6);
-          const ny = y + row * 20;
-
-          doc.save()
-            .rect(nx, ny, nameWidth, 16)
-            .fill("#f8f9fa")
-            .restore();
-
-          const name = cleanNames[i];
-          doc.fontSize(7.5).fillColor(DARK);
-          if (isArabicText(name)) {
-            doc.font(FONT_ARABIC);
-            writeArabic(doc, name, nx, ny + 3, { width: nameWidth, lineBreak: false });
+        let aliasShade = false;
+        for (const name of cleanNames.slice(0, 20)) {
+          const rh = 22;
+          doc.save().rect(40, y, cw, rh).fill(aliasShade ? ROW_ALT : WHITE).restore();
+          doc.save().strokeColor(BORDER_COLOR).lineWidth(0.4).rect(40, y, cw, rh).stroke().restore();
+          doc.fontSize(8.5);
+          if (hasArabic(name) && hasLatin(name)) {
+            const ap = name.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, "").trim();
+            const lp = name.replace(/[\u0600-\u06FF\u0750-\u077F]/g, "").replace(/[()\[\]{}<>]/g, " ").replace(/\s+/g, " ").trim();
+            doc.font(FONT_LATIN).fillColor(TEXT_DARK);
+            lat(doc, lp, 46, y + 4, { width: cw / 2, lineBreak: false });
+            doc.font(FONT_ARABIC).fillColor(TEXT_DARK);
+            ar(doc, ap, 40, y + 4, { width: cw - 6, lineBreak: false });
+          } else if (hasArabic(name)) {
+            doc.font(FONT_ARABIC).fillColor(TEXT_DARK);
+            ar(doc, name, 40, y + 6, { width: cw - 6, lineBreak: false });
           } else {
-            doc.font(FONT_LATIN);
-            writeLatin(doc, name, nx + 3, ny + 4, { width: nameWidth - 6, lineBreak: false });
+            doc.font(FONT_LATIN).fillColor(TEXT_DARK);
+            lat(doc, name, 46, y + 6, { width: cw - 10, lineBreak: false });
           }
+          y += rh;
+          aliasShade = !aliasShade;
         }
-
-        const rowCount = Math.ceil(Math.min(cleanNames.length, 12) / namesPerRow);
-        y += rowCount * 20 + 8;
+        y += 8;
       }
     }
 
-    y += 6;
-
-    // ─── ENTITY DETAILS SECTION ───────────────────────────────────────────────
-    y = drawSection(doc, "تفاصيل الكيان", "Entity Details", y);
-
-    const entityTypeEn: Record<string, string> = {
-      individual: "Individual",
-      organisation: "Organisation",
-      vessel: "Vessel",
-      unspecified: "Unspecified",
-    };
-
-    const halfW = (contentWidth - 8) / 2;
-    const entityType = record.entityType || "unspecified";
-
-    // Row 1: Entity Type + Nationality
-    drawField(doc, "نوع الكيان", "Entity Type",
-      entityTypeEn[entityType] || entityType,
-      40, y, halfW);
-    drawField(doc, "الجنسية", "Nationality",
-      record.nationality || "—",
-      40 + halfW + 8, y, halfW);
-    y += 52;
-
-    // Row 2: Date of Birth + Place of Birth
-    if (record.dateOfBirth || record.placeOfBirth) {
-      drawField(doc, "تاريخ الميلاد", "Date of Birth",
-        record.dateOfBirth || "—",
-        40, y, halfW);
-      drawField(doc, "مكان الميلاد", "Place of Birth",
-        record.placeOfBirth || "—",
-        40 + halfW + 8, y, halfW);
-      y += 52;
-    }
-
-    y += 6;
-
-    // ─── LISTING INFORMATION SECTION ──────────────────────────────────────────
-    y = drawSection(doc, "معلومات الإدراج", "Listing Information", y);
-
-    // Issuing Body + Listing Date
-    drawField(doc, "الجهة المدرجة", "Issuing Body",
-      record.issuingBody || "—",
-      40, y, halfW);
-    drawField(doc, "تاريخ الإدراج", "Listing Date",
-      record.listingDate || "—",
-      40 + halfW + 8, y, halfW);
-    y += 52;
-
-    // Legal Basis full width
-    if (record.legalBasis) {
-      drawField(doc, "السند القانوني", "Legal Basis",
-        record.legalBasis,
-        40, y, contentWidth, 44);
-      y += 52;
-    }
-
-    // Listing Reason full width
-    if (record.listingReason) {
-      const arabicCharsInReason = (record.listingReason.match(/[\u0600-\u06FF]/g) || []).length;
-      const latinCharsInReason = (record.listingReason.match(/[a-zA-Z]/g) || []).length;
-      const isMixedReason = arabicCharsInReason > 0 && latinCharsInReason > 0;
-      // Add extra height for mixed text (two lines rendered)
-      const extraHeight = isMixedReason ? 18 : 0;
-      const reasonHeight = Math.max(44 + extraHeight, Math.ceil(record.listingReason.length / 80) * 14 + 28 + extraHeight);
-      drawField(doc, "سبب الإدراج", "Listing Reason",
-        record.listingReason,
-        40, y, contentWidth, reasonHeight);
-      y += reasonHeight + 8;
-    }
-
-    // Action Taken full width
-    if (record.actionTaken) {
-      const actionHeight = Math.max(44, Math.ceil(record.actionTaken.length / 80) * 14 + 28);
-      drawField(doc, "الإجراء المتخذ", "Action Taken",
-        record.actionTaken,
-        40, y, contentWidth, actionHeight);
-      y += actionHeight + 8;
-    }
-
-    // Notes
+    // ── NOTES ─────────────────────────────────────────────────────────────────
     if (record.notes) {
-      y = drawSection(doc, "ملاحظات", "Notes", y);
-      const notesHeight = Math.max(44, Math.ceil(record.notes.length / 90) * 14 + 28);
-      doc.save()
-        .rect(40, y, contentWidth, notesHeight)
-        .fillAndStroke("#fffbeb", "#fde68a")
-        .restore();
-
-      doc.fontSize(8.5).fillColor(DARK);
-      writeAutoFont(doc, record.notes, 50, y + 10, { width: contentWidth - 20 });
-      y += notesHeight + 8;
+      y = sectionHeader(doc, "NOTES", "ملاحظات", y, pageWidth);
+      y = tableRowFull(doc, "Notes", "ملاحظات", record.notes, 40, y, cw, false);
+      y += 4;
     }
 
-    // ─── FOOTER (rendered on last page using bufferPages) ──────────────────────
+    // ── FOOTER (all pages) ────────────────────────────────────────────────────
     const range = doc.bufferedPageRange();
-    const lastPageIdx = range.start + range.count - 1;
-    doc.switchToPage(lastPageIdx);
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      (doc.page as any).margins.bottom = 0;
 
-    // Disable bottom margin to prevent new page creation when writing footer
-    (doc.page as any).margins.bottom = 0;
+      const fY = doc.page.height - 58;
 
-    const footerY = doc.page.height - 70;
+      // Footer background
+      doc.save().rect(0, fY - 4, pageWidth, 62).fill("#F0F4FA").restore();
+      hRule(doc, fY - 4, 0, pageWidth, GOLD, 1.5);
 
-    // Footer separator and background
-    doc.save();
-    doc.strokeColor(GOLD).lineWidth(0.5)
-      .moveTo(40, footerY - 8).lineTo(pageWidth - 40, footerY - 8).stroke();
-    doc.rect(0, footerY - 8, pageWidth, 78).fill("#f8fafc");
-    doc.restore();
+      // Logo
+      if (logoExists) {
+        doc.image(LOGO_PATH, 40, fY + 4, { width: 36, height: 36 });
+      }
 
-    // Small logo in footer
-    if (logoExists) {
-      doc.image(LOGO_PATH, 40, footerY + 2, { width: 28, height: 28 });
+      // Footer text
+      doc.font(FONT_ARABIC).fontSize(7).fillColor(TEXT_MID);
+      ar(doc, "هذا التقرير صادر عن منصة SanctionCheck — المستشار للاستشارات القانونية. للأغراض القانونية والامتثالية فقط.",
+        40, fY + 4, { width: cw, align: "center", lineBreak: false });
+
+      doc.font(FONT_LATIN).fontSize(7).fillColor(TEXT_MID);
+      lat(doc, "This report is issued by SanctionCheck — Al-Mustashar Legal Consultancy. For compliance and due diligence purposes only.",
+        40, fY + 17, { width: cw, align: "center", lineBreak: false });
+
+      // Page number
+      doc.font(FONT_LATIN).fontSize(7).fillColor(TEXT_LIGHT);
+      lat(doc, `Page ${i - range.start + 1} of ${range.count}`,
+        40, fY + 30, { width: cw, align: "center", lineBreak: false });
+
+      // Screened by + date (bottom right)
+      doc.font(FONT_LATIN).fontSize(6.5).fillColor(TEXT_LIGHT);
+      lat(doc, `Screened by: ${userName}  |  ${dateStr} ${timeStr}`,
+        40, fY + 42, { width: cw, align: "center", lineBreak: false });
     }
 
-    // Arabic footer
-    doc.font(FONT_ARABIC).fontSize(7).fillColor(MID_GRAY);
-    writeArabic(
-      doc,
-      "هذا التقرير صادر عن منصة المستشار للاستشارات القانونية. المعلومات مستخرجة من قواعد بيانات العقوبات الدولية.",
-      40, footerY + 2,
-      { width: contentWidth, align: "center", lineBreak: false }
-    );
-
-    // English footer
-    doc.font(FONT_LATIN).fontSize(7).fillColor(MID_GRAY);
-    writeLatin(
-      doc,
-      "This report is for compliance and due diligence purposes only. Always verify with official sanctions lists before taking action.",
-      40, footerY + 18,
-      { width: contentWidth, align: "center", lineBreak: false }
-    );
-
-    // Copyright
-    doc.font(FONT_LATIN).fontSize(6.5).fillColor(GOLD);
-    writeLatin(
-      doc,
-      `SanctionCheck (c) ${new Date().getFullYear()} - Al-Mustashar Legal Consultancy`,
-      40, footerY + 32,
-      { width: contentWidth, align: "center", lineBreak: false }
-    );
-
+    // Remove trailing blank pages
+    const finalRange = doc.bufferedPageRange();
+    const lastIdx = finalRange.start + finalRange.count - 1;
+    doc.switchToPage(lastIdx);
+    // If last page has very little content (y < 150), remove it by not rendering footer there
+    // Footer was already applied in the loop above, just flush and end
     doc.flushPages();
     doc.end();
   } catch (err) {
     console.error("[PDF Report Error]", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to generate PDF report" });
-    }
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF report" });
   }
 }
+
+export { _handleGeneratePdfReport as handleGeneratePdfReport };

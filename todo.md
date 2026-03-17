@@ -171,3 +171,15 @@ Detected
 - [x] Light theme: tagline badge = text-amber-900 on bg-amber-100, AI badge = text-blue-900 on bg-blue-100
 - [x] Verified both badges are clearly readable in light theme
 - [x] Save checkpoint and publish
+
+## Phase 23: Redesign PDF Report (LSEG World-Check Style)
+- [x] Analyze current pdf-report.ts structure
+- [x] Redesign header: logo left + "SanctionCheck Match Details Report" + "Confidential" right
+- [x] Add Record UID section with highlighted background
+- [x] Redesign all sections as structured tables with alternating row colors
+- [x] Add CASE AND COMPARISON DATA section (submitted name vs matched name)
+- [x] Redesign KEY DATA section as clean table
+- [x] Redesign ALIASES section as clean table
+- [x] Add footer with Al-Mustashar logo + page number
+- [x] Test PDF output and verify Arabic/mixed text rendering
+- [ ] Save checkpoint and publish
