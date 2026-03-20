@@ -182,4 +182,18 @@ Detected
 - [x] Redesign ALIASES section as clean table
 - [x] Add footer with Al-Mustashar logo + page number
 - [x] Test PDF output and verify Arabic/mixed text rendering
+- [x] Save checkpoint and publish
+
+
+## Phase 24: PDF Report - Exact LSEG World-Check Style (Single Page)
+- [ ] White background, no colored header banner
+- [ ] Header: logo-style text top-left + "Confidential" top-right (like LSEG)
+- [ ] Bold report title line below header
+- [ ] Record UID highlighted row
+- [ ] CASE AND COMPARISON DATA table (3 columns)
+- [ ] KEY DATA table with alternating rows (compact font size 7-8)
+- [ ] ALIASES section compact table
+- [ ] Footer: Al-Mustashar logo bottom-right only
+- [ ] Single page layout with compressed font sizes
+- [ ] Test and verify single page output
 - [ ] Save checkpoint and publish

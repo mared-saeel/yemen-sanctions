@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, nameEn, JSON_LENGTH(alternativeNames) as alt_count FROM sanctions_records WHERE id = 60447;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, nameEn, JSON_LENGTH(alternativeNames) as alt_count FROM sanctions_records WHERE id = 60447;",
+  "rows": [
+    {
+      "id": "60447",
+      "nameEn": "AL-TIKRITI SADDAM HUSSEIN",
+      "alt_count": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnameEn\talt_count\n60447\tAL-TIKRITI SADDAM HUSSEIN\t1\n",
+  "stderr": "",
+  "execution_time_ms": 420
+}
