@@ -1,6 +1,7 @@
 /**
  * PDF Report Generator — SanctionCheck Match Details Report
  * Design: LSEG World-Check One style (single page, clean, no Confidential)
+ * Fix: doc.page.margins.bottom = 0 before footer prevents extra blank page
  */
 import type { Request, Response } from "express";
 import PDFDocument from "pdfkit";
@@ -50,11 +51,11 @@ function hr(doc: PDFKit.PDFDocument, y: number, x1: number, x2: number, color = 
   doc.save().strokeColor(color).lineWidth(lw).moveTo(x1, y).lineTo(x2, y).stroke().restore();
 }
 
-/** Section heading — bold uppercase, no background */
+/** Section heading — bold uppercase */
 function sectionHead(doc: PDFKit.PDFDocument, title: string, x: number, y: number, w: number): number {
-  doc.font(FONT_EN_B).fontSize(9).fillColor(BLACK);
+  doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
   enText(doc, title, x, y, w);
-  return y + 14;
+  return y + 16;
 }
 
 /**
@@ -84,12 +85,12 @@ function renderValue(
     if (enPart) {
       doc.font(FONT_EN).fontSize(sz).fillColor(color);
       enText(doc, enPart, x, cy, w);
-      cy += sz + 2;
+      cy += sz + 3;
     }
     if (arPart) {
       doc.font(FONT_AR).fontSize(sz).fillColor(color);
       arText(doc, arPart, x, cy, w);
-      cy += sz + 2;
+      cy += sz + 3;
     }
     return cy;
   } else if (hasAr) {
@@ -114,13 +115,13 @@ function tableRow(
   x: number, y: number,
   labelW: number, totalW: number,
   shade: boolean,
-  sz = 8
+  sz = 8.5
 ): number {
   const valW = totalW - labelW;
   const hasAr = /[\u0600-\u06FF]/.test(value);
   const hasEn = /[a-zA-Z0-9]/.test(value);
   const mixed = hasAr && hasEn;
-  const rh = (mixed ? 2 : 1) * (sz + 3) + 8;
+  const rh = (mixed ? 2 : 1) * (sz + 4) + 10;
 
   // Background
   doc.save().rect(x, y, totalW, rh).fill(shade ? GRAY_ROW : WHITE).restore();
@@ -132,10 +133,10 @@ function tableRow(
 
   // Label — English only, bold, small
   doc.font(FONT_EN_B).fontSize(sz - 1).fillColor(BLACK);
-  enText(doc, label, x + 4, y + (rh / 2) - (sz / 2), labelW - 8);
+  enText(doc, label, x + 5, y + (rh / 2) - (sz / 2), labelW - 10);
 
   // Value
-  renderValue(doc, value || "—", x + labelW + 4, y + (rh / 2) - (sz / 2), valW - 8, sz, BLACK);
+  renderValue(doc, value || "—", x + labelW + 5, y + (rh / 2) - (sz / 2), valW - 10, sz, BLACK);
 
   return y + rh;
 }
@@ -158,7 +159,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       margins: { top: 40, bottom: 55, left: 45, right: 45 },
       info: {
         Title: `SanctionCheck Match Details Report — ${record.nameEn}`,
-        Author: "Al-Mustashar Legal Consultancy",
+        Author: "Yemen Sanctions Platform",
       },
     });
 
@@ -171,49 +172,47 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const PH = doc.page.height;  // 841.89
     const X  = 45;
     const W  = PW - 90;          // 505.28
-    let y    = 40;
+    let y = 40;
 
-    // ── HEADER ────────────────────────────────────────────────────────────────
-    // "Al-Mustashar" bold blue + "Legal Consultancy" gray
-    doc.font(FONT_EN_B).fontSize(15).fillColor(BLUE);
-    enText(doc, "Al-Mustashar", X, y, 160);
-    doc.font(FONT_EN_B).fontSize(10).fillColor(NAVY);
-    enText(doc, "Legal Consultancy", X + 115, y + 5, 160);
+    // ── HEADER ─────────────────────────────────────────────────────────────────
+    doc.font(FONT_EN_B).fontSize(16).fillColor(BLUE);
+    enText(doc, "Yemen", X, y, 110);
+    doc.font(FONT_EN_B).fontSize(16).fillColor(NAVY);
+    enText(doc, "Sanctions", X + 80, y, 170);
 
     // Arabic name right side
-    doc.font(FONT_AR_B).fontSize(11).fillColor(BLUE);
-    arText(doc, "المستشار للاستشارات القانونية", X, y + 3, W);
-
-    y += 20;
+    doc.font(FONT_AR_B).fontSize(12).fillColor(BLUE);
+    arText(doc, "منصة العقوبات اليمنية", X, y + 3, W);
+    y += 22;
 
     // Report title
     doc.font(FONT_EN_B).fontSize(11).fillColor(BLACK);
     enText(doc, "SANCTIONCHECK MATCH DETAILS REPORT", X, y, W);
 
-    y += 14;
+    y += 16;
     hr(doc, y, X, X + W, BLACK, 0.8);
-    y += 8;
+    y += 10;
 
     // ── RECORD UID ────────────────────────────────────────────────────────────
     const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
-    doc.font(FONT_EN_B).fontSize(9).fillColor(BLACK);
-    enText(doc, "WORLD-CHECK RECORD UID:", X, y, 170);
-    doc.font(FONT_EN_B).fontSize(9).fillColor(BLUE);
-    enText(doc, uid, X + 165, y, 200);
+    doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
+    enText(doc, "WORLD-CHECK RECORD UID:", X, y, 175);
+    doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLUE);
+    enText(doc, uid, X + 170, y, 200);
 
-    y += 14;
+    y += 16;
     hr(doc, y, X, X + W, BORDER, 0.4);
-    y += 6;
+    y += 8;
 
-    // ── META TABLE (Created & Screened / Date Printed / Printed By / Assigned To) ──
+    // ── META TABLE ────────────────────────────────────────────────────────────
     const now      = new Date();
     const dateStr  = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     const timeStr  = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
     const userName = ctx.user.name || (ctx.user as { username?: string }).username || "—";
 
-    const mH  = 28;
+    const mH  = 32;
     const mCW = W / 2;
-    const mLW = 95;
+    const mLW = 100;
 
     doc.save().rect(X, y, W, mH).fill(GRAY_ROW).restore();
     doc.save().strokeColor(BORDER).lineWidth(0.3)
@@ -221,54 +220,54 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       .moveTo(X + mCW, y).lineTo(X + mCW, y + mH).stroke()
       .restore();
 
-    const metaSz = 8;
+    const metaSz = 8.5;
     // Left column
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, "Created & Screened", X + 4, y + 4, mLW);
+    enText(doc, "Created & Screened", X + 5, y + 5, mLW);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr} ${timeStr}`, X + mLW + 2, y + 4, mCW - mLW - 6);
+    enText(doc, `${dateStr} ${timeStr}`, X + mLW + 3, y + 5, mCW - mLW - 8);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, "Printed By", X + 4, y + 16, mLW);
+    enText(doc, "Printed By", X + 5, y + 19, mLW);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, userName, X + mLW + 2, y + 16, mCW - mLW - 6);
+    enText(doc, userName, X + mLW + 3, y + 19, mCW - mLW - 8);
 
     // Right column
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, "Date Printed", X + mCW + 4, y + 4, 80);
+    enText(doc, "Date Printed", X + mCW + 5, y + 5, 85);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr}, ${timeStr}`, X + mCW + 84, y + 4, mCW - 88);
+    enText(doc, `${dateStr}, ${timeStr}`, X + mCW + 90, y + 5, mCW - 94);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, "Assigned To", X + mCW + 4, y + 16, 80);
+    enText(doc, "Assigned To", X + mCW + 5, y + 19, 85);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, userName, X + mCW + 84, y + 16, mCW - 88);
+    enText(doc, userName, X + mCW + 90, y + 19, mCW - 94);
 
-    y += mH + 12;
+    y += mH + 16;
 
     // ── CASE AND COMPARISON DATA ──────────────────────────────────────────────
     y = sectionHead(doc, "CASE AND COMPARISON DATA", X, y, W);
 
-    const c1 = 70;   // label col
-    const c2 = (W - c1) / 2;  // client col
-    const c3 = W - c1 - c2;   // world-check col
+    const c1 = 70;
+    const c2 = (W - c1) / 2;
+    const c3 = W - c1 - c2;
 
     // Column headers
-    doc.save().rect(X, y, W, 14).fill(GRAY_HEAD).restore();
+    doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
     doc.save().strokeColor(BORDER).lineWidth(0.3)
-      .rect(X, y, W, 14).stroke()
-      .moveTo(X + c1, y).lineTo(X + c1, y + 14).stroke()
-      .moveTo(X + c1 + c2, y).lineTo(X + c1 + c2, y + 14).stroke()
+      .rect(X, y, W, 16).stroke()
+      .moveTo(X + c1, y).lineTo(X + c1, y + 16).stroke()
+      .moveTo(X + c1 + c2, y).lineTo(X + c1 + c2, y + 16).stroke()
       .restore();
-    doc.font(FONT_EN_B).fontSize(7.5).fillColor(BLACK);
-    enText(doc, "Client/Submitted Data", X + c1 + 4, y + 3, c2 - 8);
-    enText(doc, "World-Check Data",      X + c1 + c2 + 4, y + 3, c3 - 8);
-    y += 14;
+    doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
+    enText(doc, "Client/Submitted Data", X + c1 + 5, y + 4, c2 - 10);
+    enText(doc, "World-Check Data",      X + c1 + c2 + 5, y + 4, c3 - 10);
+    y += 16;
 
     // Name row
     const submittedName = (req.query.submittedName as string) || record.nameEn || "—";
     const hasArName = isAr(record.nameAr || "");
-    const nRH = hasArName ? 28 : 20;
+    const nRH = hasArName ? 32 : 22;
 
     doc.save().rect(X, y, W, nRH).fill(GRAY_ROW).restore();
     doc.save().strokeColor(BORDER).lineWidth(0.3)
@@ -277,30 +276,30 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       .moveTo(X + c1 + c2, y).lineTo(X + c1 + c2, y + nRH).stroke()
       .restore();
 
-    doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
-    enText(doc, "Name", X + 4, y + (nRH / 2) - 4, c1 - 8);
+    doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLACK);
+    enText(doc, "Name", X + 5, y + (nRH / 2) - 4, c1 - 10);
 
-    // Submitted name (English)
-    doc.font(FONT_EN).fontSize(8).fillColor(BLACK);
-    enText(doc, submittedName, X + c1 + 4, y + 4, c2 - 8);
+    // Submitted name
+    doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
+    enText(doc, submittedName, X + c1 + 5, y + 5, c2 - 10);
     if (hasArName) {
-      doc.font(FONT_AR).fontSize(7.5).fillColor(GRAY_MID);
-      arText(doc, record.nameAr!, X + c1, y + 14, c2 - 4);
+      doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
+      arText(doc, record.nameAr!, X + c1, y + 17, c2 - 5);
     }
 
     // World-Check name (blue bold)
-    doc.font(FONT_EN_B).fontSize(8).fillColor(BLUE);
-    enText(doc, record.nameEn || "—", X + c1 + c2 + 4, y + 4, c3 - 8);
+    doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLUE);
+    enText(doc, record.nameEn || "—", X + c1 + c2 + 5, y + 5, c3 - 10);
     if (hasArName) {
-      doc.font(FONT_AR).fontSize(7.5).fillColor(GRAY_MID);
-      arText(doc, record.nameAr!, X + c1 + c2, y + 14, c3 - 4);
+      doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
+      arText(doc, record.nameAr!, X + c1 + c2, y + 17, c3 - 5);
     }
-    y += nRH + 10;
+    y += nRH + 14;
 
     // ── KEY DATA ──────────────────────────────────────────────────────────────
     y = sectionHead(doc, "KEY DATA", X, y, W);
 
-    const LW = 120;
+    const LW = 130;
     const typeMap: Record<string, string> = {
       individual: "Individual", organisation: "Organisation",
       vessel: "Vessel", unspecified: "Unspecified",
@@ -321,11 +320,11 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     let shade = false;
     for (const [label, value] of keyRows) {
-      y = tableRow(doc, label, value, X, y, LW, W, shade, 8);
+      y = tableRow(doc, label, value, X, y, LW, W, shade, 8.5);
       shade = !shade;
     }
 
-    y += 10;
+    y += 14;
 
     // ── LISTING REASON ────────────────────────────────────────────────────────
     if (record.listingReason) {
@@ -334,22 +333,22 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       const hasArLR = /[\u0600-\u06FF]/.test(lrText);
       const hasEnLR = /[a-zA-Z0-9]/.test(lrText);
       const mixed = hasArLR && hasEnLR;
-      const lrH = (mixed ? 2 : 1) * 12 + 10;
+      const lrH = (mixed ? 2 : 1) * 14 + 12;
       doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
-      renderValue(doc, lrText, X + 4, y + 4, W - 8, 8, BLACK);
-      y += lrH + 10;
+      renderValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
+      y += lrH + 14;
     }
 
     // ── LEGAL BASIS ───────────────────────────────────────────────────────────
     if (record.legalBasis) {
       y = sectionHead(doc, "LEGAL BASIS", X, y, W);
-      const lbH = 20;
+      const lbH = 24;
       doc.save().rect(X, y, W, lbH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lbH).stroke().restore();
-      doc.font(FONT_EN).fontSize(8).fillColor(BLACK);
-      enText(doc, record.legalBasis, X + 4, y + 5, W - 8);
-      y += lbH + 10;
+      doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
+      enText(doc, record.legalBasis, X + 5, y + 7, W - 10);
+      y += lbH + 14;
     }
 
     // ── ALIASES ───────────────────────────────────────────────────────────────
@@ -363,22 +362,22 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         y = sectionHead(doc, "ALIASES", X, y, W);
 
         const aLW = W / 2;
-        doc.save().rect(X, y, W, 14).fill(GRAY_HEAD).restore();
+        doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
         doc.save().strokeColor(BORDER).lineWidth(0.3)
-          .rect(X, y, W, 14).stroke()
-          .moveTo(X + aLW, y).lineTo(X + aLW, y + 14).stroke()
+          .rect(X, y, W, 16).stroke()
+          .moveTo(X + aLW, y).lineTo(X + aLW, y + 16).stroke()
           .restore();
-        doc.font(FONT_EN_B).fontSize(7.5).fillColor(BLACK);
-        enText(doc, "Aliases",                X + 4,       y + 3, aLW - 8);
-        enText(doc, "Native Character Names", X + aLW + 4, y + 3, aLW - 8);
-        y += 14;
+        doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
+        enText(doc, "Aliases",                X + 5,       y + 4, aLW - 10);
+        enText(doc, "Native Character Names", X + aLW + 5, y + 4, aLW - 10);
+        y += 16;
 
         const latinNames  = clean.filter(n => !isAr(n));
         const arabicNames = clean.filter(n => isAr(n));
         const maxR = Math.max(latinNames.length, arabicNames.length, 1);
 
         for (let i = 0; i < Math.min(maxR, 8); i++) {
-          const rh = 16;
+          const rh = 18;
           doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
           doc.save().strokeColor(BORDER).lineWidth(0.3)
             .rect(X, y, W, rh).stroke()
@@ -386,12 +385,12 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
             .restore();
 
           if (latinNames[i]) {
-            doc.font(FONT_EN).fontSize(8).fillColor(BLACK);
-            enText(doc, latinNames[i], X + 4, y + 4, aLW - 8);
+            doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
+            enText(doc, latinNames[i], X + 5, y + 5, aLW - 10);
           }
           if (arabicNames[i]) {
-            doc.font(FONT_AR).fontSize(8).fillColor(BLACK);
-            arText(doc, arabicNames[i], X + aLW, y + 4, aLW - 4);
+            doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
+            arText(doc, arabicNames[i], X + aLW, y + 5, aLW - 5);
           }
           y += rh;
         }
@@ -399,28 +398,38 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       }
     }
 
-      // ── FOOTER — draw directly after content ────────────────────────────────
-    y += 10;
-    hr(doc, y, X, X + W, GRAY_MID, 0.4);
+    // ── FOOTER — draw at absolute position at bottom of page ─────────────────
+    // CRITICAL: Set bottom margin to 0 BEFORE drawing footer.
+    // This prevents PDFKit from auto-adding a new page when the cursor
+    // goes below the original bottom margin boundary.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc.page as any).margins.bottom = 0;
 
-    // Disclaimer line 1 (English)
-    doc.font(FONT_EN).fontSize(6.5).fillColor(GRAY_LT);
+    const footerY = PH - 78;
+    const footerContentW = logoExists ? W - 65 : W;
+
+    hr(doc, footerY, X, X + W, GRAY_MID, 0.4);
+
+    // Disclaimer line 1 (English) — centered
+    doc.font(FONT_EN).fontSize(7.5).fillColor(GRAY_LT);
     enText(doc,
-      "This report is issued by SanctionCheck — Al-Mustashar Legal Consultancy. For compliance and due diligence purposes only.",
-      X, y + 5, W - 65);
+      "This report is issued by Yemen Sanctions Platform. For compliance and due diligence purposes only.",
+      X, footerY + 7, footerContentW, { align: "center" }
+    );
 
-    // Disclaimer line 2 (Arabic)
-    doc.font(FONT_AR).fontSize(6.5).fillColor(GRAY_LT);
+    // Disclaimer line 2 (Arabic) — right-aligned
+    doc.font(FONT_AR).fontSize(7.5).fillColor(GRAY_LT);
     arText(doc,
-      "صادر عن منصة SanctionCheck — المستشار للاستشارات القانونية. للأغراض القانونية والامتثالية فقط.",
-      X, y + 15, W - 65);
+      "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.",
+      X, footerY + 20, footerContentW
+    );
 
-    // Logo bottom-right of footer area
+    // Logo bottom-right
     if (logoExists) {
-      doc.image(LOGO_PATH, X + W - 55, y, { width: 52, height: 40 });
+      doc.image(LOGO_PATH, X + W - 55, footerY - 3, { width: 52, height: 42 });
     } else {
-      doc.font(FONT_EN_B).fontSize(8).fillColor(BLUE);
-      arText(doc, "المستشار", X, y + 10, W);
+      doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
+      arText(doc, "منصة العقوبات اليمنية", X, footerY + 12, W);
     }
 
     doc.end();
