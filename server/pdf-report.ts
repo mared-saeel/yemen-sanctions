@@ -14,8 +14,8 @@ import { createContext } from "./_core/context";
 const __filename = fileURLToPath(import.meta.url);
 const __dir = path.dirname(__filename);
 const FONTS_DIR = path.join(__dir, "fonts");
-const FONT_AR   = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
-const FONT_AR_B = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
+const FONT_AR   = path.join(FONTS_DIR, "Scheherazade-Regular.ttf");
+const FONT_AR_B = path.join(FONTS_DIR, "Scheherazade-Bold.ttf");
 const FONT_EN   = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
 const FONT_EN_B = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
 const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
@@ -75,10 +75,18 @@ function renderValue(
     return y + sz + 2;
   }
   const hasAr = /[\u0600-\u06FF]/.test(text);
-  const hasEn = /[a-zA-Z0-9]/.test(text);
+  // Count Arabic chars vs Latin letters — if Arabic dominates, treat as Arabic
+  const arChars = (text.match(/[\u0600-\u06FF]/g) || []).length;
+  const enLetters = (text.match(/[a-zA-Z]/g) || []).length;
+  const arDominant = hasAr && arChars > enLetters;
 
-  if (hasAr && hasEn) {
-    // Mixed: show English part first, then Arabic part below
+  if (arDominant) {
+    // Arabic-dominant text (may contain numbers/punctuation): render as Arabic
+    doc.font(FONT_AR).fontSize(sz).fillColor(color);
+    arText(doc, text, x, y, w);
+    return y + sz + 2;
+  } else if (hasAr && !arDominant) {
+    // True mixed: English letters dominate, show English part then Arabic part
     const enPart = text.replace(/[\u0600-\u06FF\u0750-\u077F]/g, "").replace(/\s+/g, " ").trim();
     const arPart = text.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, "").trim();
     let cy = y;
@@ -93,10 +101,6 @@ function renderValue(
       cy += sz + 3;
     }
     return cy;
-  } else if (hasAr) {
-    doc.font(FONT_AR).fontSize(sz).fillColor(color);
-    arText(doc, text, x, y, w);
-    return y + sz + 2;
   } else {
     doc.font(FONT_EN).fontSize(sz).fillColor(color);
     enText(doc, text, x, y, w);
@@ -279,17 +283,28 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLACK);
     enText(doc, "Name", X + 5, y + (nRH / 2) - 4, c1 - 10);
 
-    // Submitted name
-    doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
-    enText(doc, submittedName, X + c1 + 5, y + 5, c2 - 10);
+    // Submitted name — use Arabic font if Arabic-only
+    if (isAr(submittedName) && !/[a-zA-Z0-9]/.test(submittedName)) {
+      doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
+      arText(doc, submittedName, X + c1, y + 5, c2 - 5);
+    } else {
+      doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
+      enText(doc, submittedName, X + c1 + 5, y + 5, c2 - 10);
+    }
     if (hasArName) {
       doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
       arText(doc, record.nameAr!, X + c1, y + 17, c2 - 5);
     }
 
-    // World-Check name (blue bold)
-    doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLUE);
-    enText(doc, record.nameEn || "—", X + c1 + c2 + 5, y + 5, c3 - 10);
+    // World-Check name (blue bold) — use Arabic font if Arabic-only
+    const wcName = record.nameEn || record.nameAr || "—";
+    if (isAr(wcName) && !/[a-zA-Z0-9]/.test(wcName)) {
+      doc.font(FONT_AR_B).fontSize(8.5).fillColor(BLUE);
+      arText(doc, wcName, X + c1 + c2, y + 5, c3 - 5);
+    } else {
+      doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLUE);
+      enText(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10);
+    }
     if (hasArName) {
       doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
       arText(doc, record.nameAr!, X + c1 + c2, y + 17, c3 - 5);
@@ -309,7 +324,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       ["Dataset",       record.issuingBody || "—"],
       ["Category",      record.entityType ? (typeMap[record.entityType] || record.entityType) : "—"],
       ["Sub-Category",  record.entityType === "individual" ? "Individual" : (record.entityType || "—")],
-      ["Name",          record.nameEn || "—"],
+      ["Name",          record.nameEn || record.nameAr || "—"],
       ["Gender",        "—"],
       ["Citizenship",   record.nationality || "—"],
       ["Date of Birth", record.dateOfBirth || "—"],
@@ -346,8 +361,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       const lbH = 24;
       doc.save().rect(X, y, W, lbH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lbH).stroke().restore();
-      doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
-      enText(doc, record.legalBasis, X + 5, y + 7, W - 10);
+      renderValue(doc, record.legalBasis, X + 5, y + 7, W - 10, 8.5, BLACK);
       y += lbH + 14;
     }
 
