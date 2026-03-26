@@ -80,12 +80,11 @@ function renderValue(
   const enLetters = (text.match(/[a-zA-Z]/g) || []).length;
   const arDominant = hasAr && arChars > enLetters;
 
-  const AR_SZ = 10;
   if (arDominant) {
     // Arabic-dominant text (may contain numbers/punctuation): render as Arabic
-    doc.font(FONT_AR).fontSize(AR_SZ).fillColor(color);
+    doc.font(FONT_AR).fontSize(sz).fillColor(color);
     arText(doc, text, x, y, w);
-    return y + AR_SZ + 2;
+    return y + sz + 2;
   } else if (hasAr && !arDominant) {
     // True mixed: English letters dominate, show English part then Arabic part
     const enPart = text.replace(/[\u0600-\u06FF\u0750-\u077F]/g, "").replace(/\s+/g, " ").trim();
@@ -97,9 +96,9 @@ function renderValue(
       cy += sz + 3;
     }
     if (arPart) {
-      doc.font(FONT_AR).fontSize(AR_SZ).fillColor(color);
+      doc.font(FONT_AR).fontSize(sz).fillColor(color);
       arText(doc, arPart, x, cy, w);
-      cy += AR_SZ + 3;
+      cy += sz + 3;
     }
     return cy;
   } else {
@@ -128,8 +127,7 @@ function tableRow(
   const enLettersRow = (value.match(/[a-zA-Z]/g) || []).length;
   const arDominantRow = hasAr && arCharsRow > enLettersRow;
   const mixed = hasAr && !arDominantRow;
-  const AR_SZ_ROW = 10;
-  const effectiveSz = arDominantRow ? AR_SZ_ROW : sz;
+  const effectiveSz = sz;
   const rh = (mixed ? 2 : 1) * (effectiveSz + 4) + 10;
 
   // Background
@@ -290,7 +288,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // Submitted name — use Arabic font if Arabic-only
     if (isAr(submittedName) && !/[a-zA-Z0-9]/.test(submittedName)) {
-      doc.font(FONT_AR).fontSize(10).fillColor(BLACK);
+      doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
       arText(doc, submittedName, X + c1, y + 5, c2 - 5);
     } else {
       doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
@@ -304,7 +302,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     // World-Check name (blue bold) — use Arabic font if Arabic-only
     const wcName = record.nameEn || record.nameAr || "—";
     if (isAr(wcName) && !/[a-zA-Z0-9]/.test(wcName)) {
-      doc.font(FONT_AR_B).fontSize(10).fillColor(BLUE);
+      doc.font(FONT_AR_B).fontSize(8.5).fillColor(BLUE);
       arText(doc, wcName, X + c1 + c2, y + 5, c3 - 5);
     } else {
       doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLUE);
@@ -353,10 +351,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       const hasArLR = /[\u0600-\u06FF]/.test(lrText);
       const hasEnLR = /[a-zA-Z0-9]/.test(lrText);
       const mixed = hasArLR && hasEnLR;
-      const arCharsLR = (lrText.match(/[\u0600-\u06FF]/g) || []).length;
-      const enLettersLR = (lrText.match(/[a-zA-Z]/g) || []).length;
-      const arDomLR = hasArLR && arCharsLR > enLettersLR;
-      const lrH = arDomLR ? (10 + 16) : (mixed ? 2 : 1) * 14 + 12;
+      const lrH = (mixed ? 2 : 1) * 14 + 12;
       doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
       renderValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
@@ -366,10 +361,10 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     // ── LEGAL BASIS ───────────────────────────────────────────────────────────
     if (record.legalBasis) {
       y = sectionHead(doc, "LEGAL BASIS", X, y, W);
-      const lbH = 26;
+      const lbH = 24;
       doc.save().rect(X, y, W, lbH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lbH).stroke().restore();
-      renderValue(doc, record.legalBasis, X + 5, y + 6, W - 10, 8.5, BLACK);
+      renderValue(doc, record.legalBasis, X + 5, y + 7, W - 10, 8.5, BLACK);
       y += lbH + 14;
     }
 
@@ -411,8 +406,8 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
             enText(doc, latinNames[i], X + 5, y + 5, aLW - 10);
           }
           if (arabicNames[i]) {
-            doc.font(FONT_AR).fontSize(10).fillColor(BLACK);
-            arText(doc, arabicNames[i], X + aLW, y + 4, aLW - 5);
+            doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
+            arText(doc, arabicNames[i], X + aLW, y + 5, aLW - 5);
           }
           y += rh;
         }
