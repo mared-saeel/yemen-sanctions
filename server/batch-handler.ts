@@ -9,6 +9,74 @@ import { searchSanctions } from "./search-engine";
 import { createContext } from "./_core/context";
 import { createAuditLog } from "./db";
 
+// ─── Batch-specific matching helpers ─────────────────────────────────────────
+
+/** Normalize text for comparison: remove diacritics, unify Arabic chars, lowercase */
+function batchNormalize(text: string): string {
+  return text
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ةه]/g, "ه")
+    .replace(/[يى]/g, "ي")
+    .replace(/[\u064B-\u065F]/g, "") // strip diacritics
+    .toLowerCase()
+    .replace(/[^\u0600-\u06FFa-z0-9\s]/g, " ") // keep Arabic + Latin + digits
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Common Arabic words that should NOT count as meaningful matches */
+const STOP_WORDS = new Set([
+  "شركة", "مؤسسة", "مجموعة", "عبد", "ابن", "بن", "ال", "محمد", "احمد",
+  "the", "al", "el", "bin", "ibn", "and", "of", "for", "co", "ltd", "inc",
+  "llc", "corp", "group", "company", "trading", "international",
+]);
+
+/**
+ * Word Overlap Score — measures how many meaningful words are shared
+ * between the submitted name and the matched name.
+ * Returns a value 0-1. A score < 0.35 means the names share too few words.
+ */
+function wordOverlapScore(nameA: string, nameB: string): number {
+  const tokensA = batchNormalize(nameA)
+    .split(/\s+/)
+    .filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+  const tokensB = batchNormalize(nameB)
+    .split(/\s+/)
+    .filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+
+  // Count tokens in A that have a close match (≥ 80% Levenshtein) in B
+  let matched = 0;
+  for (const ta of tokensA) {
+    for (const tb of tokensB) {
+      const maxLen = Math.max(ta.length, tb.length);
+      if (maxLen === 0) continue;
+      // Simple character-level similarity
+      const dist = levenshteinDist(ta, tb);
+      const sim = 1 - dist / maxLen;
+      if (sim >= 0.80) { matched++; break; }
+    }
+  }
+
+  // Overlap = matched / min(tokensA, tokensB) — penalizes if few words match
+  return matched / Math.min(tokensA.length, tokensB.length);
+}
+
+/** Simple Levenshtein distance (iterative, no external dep) */
+function levenshteinDist(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
 export interface BatchRow {
   rowNumber: number;
   submittedName: string;
@@ -62,17 +130,43 @@ export async function handleBatchScreen(req: Request, res: Response) {
     for (const { row, name } of names) {
       const searchResult = await searchSanctions({
         query: name,
-        limit: 1,
-        threshold: 0.65, // higher threshold = fewer false positives
+        limit: 3,          // get top-3 to pick best after overlap check
+        threshold: 0.60,   // pre-filter: only candidates with base score >= 60%
       });
 
-      const top = searchResult.results[0];
+      // ── Dual-gate classification ──────────────────────────────────────────
+      // Gate 1: fuseScore >= threshold
+      // Gate 2: wordOverlap >= 0.40 (at least 40% of meaningful words match)
+      // Both gates must pass for MATCH or POSSIBLE_MATCH.
+      // This prevents false positives caused by shared common words (عبد، شركة، etc.)
+
       let status: BatchRow["status"] = "NO_MATCH";
-      if (top) {
-        if (top.matchScore >= 0.90) status = "MATCH";          // 90%+ = confirmed match
-        else if (top.matchScore >= 0.70) status = "POSSIBLE_MATCH"; // 70-89% = needs review
-        // < 70% = NO_MATCH (not shown as a hit)
+      let chosenTop = searchResult.results[0] ?? null;
+
+      for (const candidate of searchResult.results) {
+        const candidateName = candidate.nameEn || candidate.nameAr || "";
+        const overlap = wordOverlapScore(name, candidateName);
+
+        // Also check Arabic name if available
+        const overlapAr = candidate.nameAr
+          ? wordOverlapScore(name, candidate.nameAr)
+          : 0;
+        const bestOverlap = Math.max(overlap, overlapAr);
+
+        const score = candidate.matchScore; // already 0-100
+
+        if (score >= 90 && bestOverlap >= 0.40) {
+          status = "MATCH";
+          chosenTop = candidate;
+          break;
+        } else if (score >= 70 && bestOverlap >= 0.35) {
+          status = "POSSIBLE_MATCH";
+          chosenTop = candidate;
+          // don't break — keep looking for a better MATCH
+        }
       }
+
+      const top = chosenTop;
 
       results.push({
         rowNumber: row,
