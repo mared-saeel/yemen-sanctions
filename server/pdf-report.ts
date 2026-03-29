@@ -185,7 +185,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(16).fillColor(BLUE);
     enText(doc, "Yemen", X, y, 110);
     doc.font(FONT_EN_B).fontSize(16).fillColor(NAVY);
-    enText(doc, "Sanctions", X + 80, y, 170);
+    enText(doc, "Sanctions", X + 55, y, 170);
 
     // Arabic name right side
     doc.font(FONT_AR_B).fontSize(12).fillColor(BLUE);
