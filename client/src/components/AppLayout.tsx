@@ -15,6 +15,7 @@ import {
   Bell,
   Menu,
   Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Screening", href: "/search", icon: <Search size={16} /> },
+  { label: "Batch Screening", href: "/batch", icon: <FileSpreadsheet size={16} /> },
   { label: "Admin Dashboard", href: "/admin", icon: <LayoutDashboard size={16} />, adminOnly: true, group: "Administration" },
   { label: "Users", href: "/admin/users", icon: <Users size={16} />, adminOnly: true, group: "Administration" },
   { label: "Companies", href: "/admin/companies", icon: <Building2 size={16} />, adminOnly: true, group: "Administration" },
