@@ -25,6 +25,10 @@
 - [x] Build audit log viewer with search and filters
 - [ ] Build system monitoring charts (coming soon)
 
+## Phase 25: Fix Batch Screening - Raise Match Threshold to 90%
+- [x] رفع الحد الأدنى للمطابقة في Batch Screening إلى 90% لتجنب النتائج الخاطئة
+- [x] تحديث تصنيفات النتائج: MATCH >= 90%, POSSIBLE MATCH 70-89%, NO MATCH < 70%
+
 ## Phase 4: Export & Reports
 - [x] Export search results to PDF (print-to-PDF)
 - [x] Export search results to Excel/CSV

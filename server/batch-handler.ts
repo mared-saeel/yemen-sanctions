@@ -63,14 +63,15 @@ export async function handleBatchScreen(req: Request, res: Response) {
       const searchResult = await searchSanctions({
         query: name,
         limit: 1,
-        threshold: 0.35,
+        threshold: 0.65, // higher threshold = fewer false positives
       });
 
       const top = searchResult.results[0];
       let status: BatchRow["status"] = "NO_MATCH";
       if (top) {
-        if (top.matchScore >= 0.85) status = "MATCH";
-        else if (top.matchScore >= 0.55) status = "POSSIBLE_MATCH";
+        if (top.matchScore >= 0.90) status = "MATCH";          // 90%+ = confirmed match
+        else if (top.matchScore >= 0.70) status = "POSSIBLE_MATCH"; // 70-89% = needs review
+        // < 70% = NO_MATCH (not shown as a hit)
       }
 
       results.push({
