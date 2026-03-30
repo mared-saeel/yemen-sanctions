@@ -48,6 +48,82 @@ export interface SearchOptions {
   threshold?: number; // 0-1, lower = more strict
 }
 
+// ─── Arabic → Latin Transliteration ─────────────────────────────────────────
+
+/**
+ * Converts Arabic text to approximate Latin/English transliteration.
+ * This allows Arabic queries to match English-stored names in the DB.
+ * e.g. "الرضوان" → "alridhwan" / "alradwan"
+ */
+export function arabicToLatin(text: string): string {
+  const map: Record<string, string> = {
+    'ا': 'a', 'أ': 'a', 'إ': 'a', 'آ': 'a',
+    'ب': 'b',
+    'ت': 't',
+    'ث': 'th',
+    'ج': 'j',
+    'ح': 'h',
+    'خ': 'kh',
+    'د': 'd',
+    'ذ': 'dh',
+    'ر': 'r',
+    'ز': 'z',
+    'س': 's',
+    'ش': 'sh',
+    'ص': 's',
+    'ض': 'd',
+    'ط': 't',
+    'ظ': 'dh',
+    'ع': '',
+    'غ': 'gh',
+    'ف': 'f',
+    'ق': 'q',
+    'ك': 'k',
+    'ل': 'l',
+    'م': 'm',
+    'ن': 'n',
+    'ه': 'h',
+    'ة': 'h',
+    'و': 'w',
+    'ي': 'y',
+    'ى': 'a',
+    'ء': '',
+    'ئ': 'y',
+    'ؤ': 'w',
+    'لا': 'la',
+    'ال': 'al',
+    ' ': ' ',
+  };
+
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    // Try two-char combos first (لا، ال)
+    const two = text.slice(i, i + 2);
+    if (map[two] !== undefined) {
+      result += map[two];
+      i += 2;
+    } else {
+      const ch = text[i];
+      result += map[ch] !== undefined ? map[ch] : ch;
+      i++;
+    }
+  }
+  // Normalize spaces and remove diacritics residue
+  return result
+    .replace(/[\u064B-\u065F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Returns true if the text contains Arabic characters.
+ */
+function isArabic(text: string): boolean {
+  return /[\u0600-\u06FF]/.test(text);
+}
+
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
 function normalizeArabic(text: string): string {
@@ -113,7 +189,6 @@ function scoreRecord(
   record: typeof sanctionsRecords.$inferSelect
 ): { score: number; matchType: SearchResult["matchType"] } {
   const nQuery = normalize(query);
-  // Also normalize with raw lowercase for English (no special char removal)
   const rawQuery = query.toLowerCase().trim();
   const nNameEn = normalize(record.nameEn || "");
   const rawNameEn = (record.nameEn || "").toLowerCase().trim();
@@ -122,7 +197,11 @@ function scoreRecord(
   const nAltNames = altNames.map((n) => normalize(n));
   const rawAltNames = altNames.map((n) => n.toLowerCase().trim());
 
-  // 1. Exact match (highest priority) - both normalized and raw
+  // Transliteration: if query is Arabic, also compare against English name via transliteration
+  const queryIsArabic = isArabic(query);
+  const transQuery = queryIsArabic ? arabicToLatin(query) : null;
+
+  // 1. Exact match (highest priority)
   if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery) {
     return { score: 1.0, matchType: "exact" };
   }
@@ -130,7 +209,7 @@ function scoreRecord(
     return { score: 0.98, matchType: "exact" };
   }
 
-  // 2. Contains match - both normalized and raw
+  // 2. Contains match
   if (nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery)) {
     return { score: 0.92, matchType: "exact" };
   }
@@ -138,7 +217,7 @@ function scoreRecord(
     return { score: 0.88, matchType: "exact" };
   }
 
-  // 3. Token-based similarity (use both raw and normalized)
+  // 3. Token-based similarity
   const enTokenScore = Math.max(
     tokenSimilarity(query, record.nameEn || ""),
     tokenSimilarity(rawQuery, rawNameEn)
@@ -146,15 +225,34 @@ function scoreRecord(
   const arTokenScore = tokenSimilarity(query, record.nameAr || "");
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
 
-  const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore);
+  // 3b. Transliteration-based token similarity (Arabic query vs English name)
+  let transTokenScore = 0;
+  if (transQuery) {
+    transTokenScore = Math.max(
+      tokenSimilarity(transQuery, record.nameEn || ""),
+      tokenSimilarity(transQuery, rawNameEn)
+    );
+    // Also check transliterated query against alt names
+    const transAltScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(transQuery, n)));
+    transTokenScore = Math.max(transTokenScore, transAltScore);
+  }
 
-  // 4. Full Levenshtein on full name (both normalized and raw)
+  const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore, transTokenScore);
+
+  // 4. Full Levenshtein
   const levEn = Math.max(
     levenshteinSimilarity(nQuery, nNameEn),
     levenshteinSimilarity(rawQuery, rawNameEn)
   );
   const levAr = levenshteinSimilarity(nQuery, nNameAr);
-  const levScore = Math.max(levEn, levAr);
+  // Transliteration-based Levenshtein
+  const levTrans = transQuery
+    ? Math.max(
+        levenshteinSimilarity(transQuery, rawNameEn),
+        levenshteinSimilarity(transQuery, nNameEn)
+      )
+    : 0;
+  const levScore = Math.max(levEn, levAr, levTrans);
 
   const finalScore = Math.max(tokenScore * 0.85, levScore * 0.75);
 
@@ -216,10 +314,14 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   // Also use original (non-normalized) terms for English queries
   const rawTerms = trimmedQuery
     .toLowerCase()
-    .split(/[\s.,;:!?()\[\]{}'"]+/)
+    .split(/[\s.,;:!?()\[\]{}'"]+ /)
     .filter((t) => t.length >= 2);
-  // Combine both sets, deduplicate
-  const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms]));
+  // Transliteration terms: if Arabic query, convert to Latin and split
+  const transTerms = isArabic(trimmedQuery)
+    ? arabicToLatin(trimmedQuery).split(/\s+/).filter((t) => t.length >= 2)
+    : [];
+  // Combine all sets, deduplicate
+  const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
 
   // For short queries (1-2 meaningful words), also try the full query as a phrase
   const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of'].includes(t));
@@ -446,6 +548,8 @@ export function batchSearchOne(
   // Step 1: fast pre-filter using normalized string includes
   const nQuery = normalize(trimmedQuery);
   const rawQuery = trimmedQuery.toLowerCase();
+  // Transliteration: if Arabic query, also search English names via transliteration
+  const transQuery = isArabic(trimmedQuery) ? arabicToLatin(trimmedQuery) : null;
 
   const candidates: BatchSearchRecord[] = [];
   for (const record of allRecords) {
@@ -456,8 +560,9 @@ export function batchSearchOne(
 
     // Check if any token from the query appears in the record name
     const queryTokens = nQuery.split(/\s+/).filter(t => t.length >= 2);
-    const rawTokens = rawQuery.split(/[\s.,;:!?()\[\]{}'"]+/).filter(t => t.length >= 2);
-    const allTokens = Array.from(new Set([...queryTokens, ...rawTokens]));
+    const rawTokens = rawQuery.split(/[\s.,;:!?()\[\]{}'"]+ /).filter(t => t.length >= 2);
+    const transTokens = transQuery ? transQuery.split(/\s+/).filter(t => t.length >= 2) : [];
+    const allTokens = Array.from(new Set([...queryTokens, ...rawTokens, ...transTokens]));
 
     const hasMatch = allTokens.some(t =>
       nEn.includes(t) || nAr.includes(t) || rawEn.includes(t) ||
@@ -496,12 +601,18 @@ export function batchSearchOne(
 
   // Step 3: if not enough, use Fuse index (already built, no DB call)
   if (scored.length < 5) {
-    const fuseResults = fuseIndex.search(trimmedQuery);
-    for (const fr of fuseResults) {
-      const existing = scored.find(s => s.id === fr.item.id);
-      if (!existing) {
+    // For Arabic queries: also search using transliterated version to find English-only records
+    const fuseQueries = [trimmedQuery];
+    if (transQuery) fuseQueries.push(transQuery);
+
+    const seenIds = new Set(scored.map(s => s.id));
+    for (const fq of fuseQueries) {
+      const fuseResults = fuseIndex.search(fq);
+      for (const fr of fuseResults) {
+        if (seenIds.has(fr.item.id)) continue;
         const fuseScore = fr.score !== undefined ? 1 - fr.score : 0.5;
         if (fuseScore >= threshold) {
+          seenIds.add(fr.item.id);
           scored.push({
             id: fr.item.id,
             nameEn: fr.item.nameEn,
