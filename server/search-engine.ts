@@ -356,6 +356,181 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   return { results: paginated, total, queryTime };
 }
 
+// ─── Batch-optimized search (loads DB once, searches in memory) ──────────────
+
+export interface BatchSearchRecord {
+  id: number;
+  nameEn: string;
+  nameAr: string | null;
+  entityType: string;
+  listingDate: string | null;
+  listingReason: string | null;
+  issuingBody: string | null;
+  legalBasis: string | null;
+  actionTaken: string | null;
+  nationality: string | null;
+  dateOfBirth: string | null;
+  placeOfBirth: string | null;
+  alternativeNames: string[];
+  notes: string | null;
+  referenceNumber: string | null;
+  rawNotes: string | null;
+}
+
+/**
+ * Load all sanctions records once for batch processing.
+ * Call this ONCE before processing a batch, then pass the result to batchSearchOne.
+ */
+export async function loadAllRecordsForBatch(): Promise<BatchSearchRecord[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db
+    .select({
+      id: sanctionsRecords.id,
+      nameEn: sanctionsRecords.nameEn,
+      nameAr: sanctionsRecords.nameAr,
+      entityType: sanctionsRecords.entityType,
+      listingDate: sanctionsRecords.listingDate,
+      listingReason: sanctionsRecords.listingReason,
+      issuingBody: sanctionsRecords.issuingBody,
+      legalBasis: sanctionsRecords.legalBasis,
+      actionTaken: sanctionsRecords.actionTaken,
+      nationality: sanctionsRecords.nationality,
+      dateOfBirth: sanctionsRecords.dateOfBirth,
+      placeOfBirth: sanctionsRecords.placeOfBirth,
+      alternativeNames: sanctionsRecords.alternativeNames,
+      notes: sanctionsRecords.notes,
+      referenceNumber: sanctionsRecords.referenceNumber,
+      rawNotes: sanctionsRecords.rawNotes,
+    })
+    .from(sanctionsRecords);
+  return rows.map(r => ({
+    ...r,
+    alternativeNames: (r.alternativeNames as string[] | null) || [],
+  }));
+}
+
+/**
+ * Build a Fuse.js index once from the loaded records.
+ * Reuse this index for all names in the batch.
+ */
+export function buildBatchFuseIndex(records: BatchSearchRecord[]): Fuse<BatchSearchRecord> {
+  return new Fuse(records, {
+    keys: [
+      { name: "nameEn", weight: 2 },
+      { name: "nameAr", weight: 2 },
+      { name: "alternativeNames", weight: 1.5 },
+    ],
+    threshold: 0.5,
+    includeScore: true,
+    ignoreLocation: true,
+    minMatchCharLength: 2,
+  });
+}
+
+/**
+ * Search a single name against the pre-loaded records + Fuse index.
+ * No DB calls — pure in-memory scoring.
+ */
+export function batchSearchOne(
+  query: string,
+  allRecords: BatchSearchRecord[],
+  fuseIndex: Fuse<BatchSearchRecord>,
+  threshold = 0.60,
+  limit = 3
+): SearchResult[] {
+  if (!query || query.trim().length < 2) return [];
+
+  const trimmedQuery = query.trim();
+
+  // Step 1: fast pre-filter using normalized string includes
+  const nQuery = normalize(trimmedQuery);
+  const rawQuery = trimmedQuery.toLowerCase();
+
+  const candidates: BatchSearchRecord[] = [];
+  for (const record of allRecords) {
+    const nEn = normalize(record.nameEn || "");
+    const nAr = normalize(record.nameAr || "");
+    const nAlts = (record.alternativeNames || []).map(n => normalize(n));
+    const rawEn = (record.nameEn || "").toLowerCase();
+
+    // Check if any token from the query appears in the record name
+    const queryTokens = nQuery.split(/\s+/).filter(t => t.length >= 2);
+    const rawTokens = rawQuery.split(/[\s.,;:!?()\[\]{}'"]+/).filter(t => t.length >= 2);
+    const allTokens = Array.from(new Set([...queryTokens, ...rawTokens]));
+
+    const hasMatch = allTokens.some(t =>
+      nEn.includes(t) || nAr.includes(t) || rawEn.includes(t) ||
+      nAlts.some(a => a.includes(t))
+    );
+    if (hasMatch) candidates.push(record);
+  }
+
+  // Step 2: score candidates
+  const scored: SearchResult[] = [];
+  for (const record of candidates) {
+    const { score, matchType } = scoreRecord(trimmedQuery, record as typeof sanctionsRecords.$inferSelect);
+    if (score >= threshold) {
+      scored.push({
+        id: record.id,
+        nameEn: record.nameEn,
+        nameAr: record.nameAr,
+        entityType: record.entityType,
+        listingDate: record.listingDate,
+        listingReason: record.listingReason,
+        issuingBody: record.issuingBody,
+        legalBasis: record.legalBasis,
+        actionTaken: record.actionTaken,
+        nationality: record.nationality,
+        dateOfBirth: record.dateOfBirth,
+        placeOfBirth: record.placeOfBirth,
+        alternativeNames: record.alternativeNames || [],
+        notes: record.notes,
+        referenceNumber: record.referenceNumber,
+        rawNotes: record.rawNotes,
+        matchScore: Math.round(score * 100),
+        matchType,
+      });
+    }
+  }
+
+  // Step 3: if not enough, use Fuse index (already built, no DB call)
+  if (scored.length < 5) {
+    const fuseResults = fuseIndex.search(trimmedQuery);
+    for (const fr of fuseResults) {
+      const existing = scored.find(s => s.id === fr.item.id);
+      if (!existing) {
+        const fuseScore = fr.score !== undefined ? 1 - fr.score : 0.5;
+        if (fuseScore >= threshold) {
+          scored.push({
+            id: fr.item.id,
+            nameEn: fr.item.nameEn,
+            nameAr: fr.item.nameAr,
+            entityType: fr.item.entityType,
+            listingDate: fr.item.listingDate,
+            listingReason: fr.item.listingReason,
+            issuingBody: fr.item.issuingBody,
+            legalBasis: fr.item.legalBasis,
+            actionTaken: fr.item.actionTaken,
+            nationality: fr.item.nationality,
+            dateOfBirth: fr.item.dateOfBirth,
+            placeOfBirth: fr.item.placeOfBirth,
+            alternativeNames: fr.item.alternativeNames || [],
+            notes: fr.item.notes,
+            referenceNumber: fr.item.referenceNumber,
+            rawNotes: fr.item.rawNotes,
+            matchScore: Math.round(fuseScore * 100),
+            matchType: "fuzzy",
+          });
+        }
+      }
+    }
+  }
+
+  scored.sort((a, b) => b.matchScore - a.matchScore);
+  return scored.slice(0, limit);
+}
+
 // ─── AI-enhanced search ───────────────────────────────────────────────────────
 
 export async function aiEnhancedSearch(

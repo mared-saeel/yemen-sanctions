@@ -2,10 +2,14 @@
  * Batch Screening Handler
  * Processes an uploaded Excel file, screens each name against the sanctions DB,
  * and returns results as JSON (for the UI) or exports them as Excel.
+ *
+ * PERFORMANCE FIX: loadAllRecordsForBatch() + buildBatchFuseIndex() are called
+ * ONCE per batch request. All 400+ names are then screened in-memory with
+ * batchSearchOne() — no repeated DB calls per name.
  */
 import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
-import { searchSanctions } from "./search-engine";
+import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne } from "./search-engine";
 import { createContext } from "./_core/context";
 import { createAuditLog } from "./db";
 
@@ -125,25 +129,24 @@ export async function handleBatchScreen(req: Request, res: Response) {
       return res.status(400).json({ error: "Maximum 500 names per batch. Please split your file." });
     }
 
-    // Screen each name
+    // ── PERFORMANCE: Load all DB records ONCE, build Fuse index ONCE ──────────
+    const allRecords = await loadAllRecordsForBatch();
+    const fuseIndex = buildBatchFuseIndex(allRecords);
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Screen each name using in-memory search (no DB calls per name)
     const results: BatchRow[] = [];
     for (const { row, name } of names) {
-      const searchResult = await searchSanctions({
-        query: name,
-        limit: 3,          // get top-3 to pick best after overlap check
-        threshold: 0.60,   // pre-filter: only candidates with base score >= 60%
-      });
+      const candidates = batchSearchOne(name, allRecords, fuseIndex, 0.60, 3);
 
       // ── Dual-gate classification ──────────────────────────────────────────
-      // Gate 1: fuseScore >= threshold
+      // Gate 1: matchScore >= threshold
       // Gate 2: wordOverlap >= 0.40 (at least 40% of meaningful words match)
       // Both gates must pass for MATCH or POSSIBLE_MATCH.
-      // This prevents false positives caused by shared common words (عبد، شركة، etc.)
-
       let status: BatchRow["status"] = "NO_MATCH";
-      let chosenTop = searchResult.results[0] ?? null;
+      let chosenTop = candidates[0] ?? null;
 
-      for (const candidate of searchResult.results) {
+      for (const candidate of candidates) {
         const candidateName = candidate.nameEn || candidate.nameAr || "";
         const overlap = wordOverlapScore(name, candidateName);
 
@@ -172,7 +175,7 @@ export async function handleBatchScreen(req: Request, res: Response) {
         rowNumber: row,
         submittedName: name,
         status,
-        matchScore: top ? Math.round(top.matchScore * 100) : 0,
+        matchScore: top ? top.matchScore : 0,
         matchedName: top?.nameEn ?? null,
         matchedNameAr: top?.nameAr ?? null,
         entityType: top?.entityType ?? null,
