@@ -11,7 +11,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleImportSanctions, handleGetImportLogs } from "../import-handler";
 import { handleGeneratePdfReport } from "../pdf-report";
-import { handleBatchScreen, handleBatchExport } from "../batch-handler";
+import { handleBatchScreen, handleBatchStatus, handleBatchExport } from "../batch-handler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -66,6 +66,7 @@ async function startServer() {
 
   // Batch Screening
   app.post("/api/batch/screen", upload.single("file"), handleBatchScreen);
+  app.get("/api/batch/status/:jobId", handleBatchStatus);
   app.post("/api/batch/export", express.json({ limit: "10mb" }), handleBatchExport);
 
   // tRPC API

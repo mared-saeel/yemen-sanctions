@@ -119,42 +119,67 @@ export default function BatchScreening() {
       const formData = new FormData();
       formData.append("file", file);
 
-      setProgress(15);
-      setProgressLabel("Parsing Excel file...");
-
-      const res = await fetch("/api/batch/screen", {
+      // Step 1: Upload file and get jobId immediately
+      const uploadRes = await fetch("/api/batch/screen", {
         method: "POST",
         body: formData,
         credentials: "include",
       });
 
-      setProgress(40);
-      setProgressLabel("Screening names against sanctions database...");
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(err.error || `Server error ${res.status}`);
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(err.error || `Server error ${uploadRes.status}`);
       }
 
-      // Simulate progress while waiting
-      const progressInterval = setInterval(() => {
-        setProgress(p => Math.min(p + 3, 85));
-      }, 300);
+      const { jobId, total } = await uploadRes.json();
+      setProgress(10);
+      setProgressLabel(`Processing 0 / ${total} names...`);
 
-      const data = await res.json();
-      clearInterval(progressInterval);
+      // Step 2: Poll for progress every 1.5 seconds
+      await new Promise<void>((resolve, reject) => {
+        const poll = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/batch/status/${jobId}`, {
+              credentials: "include",
+            });
+            if (!statusRes.ok) {
+              clearInterval(poll);
+              reject(new Error("Failed to get job status"));
+              return;
+            }
+            const status = await statusRes.json();
 
-      setProgress(95);
-      setProgressLabel("Preparing results...");
+            // Update progress bar based on real server progress
+            const serverProgress = Math.max(10, Math.round(status.progress * 0.9));
+            setProgress(serverProgress);
+            setProgressLabel(`Processing ${status.processed} / ${status.total} names...`);
 
-      await new Promise(r => setTimeout(r, 300));
+            if (status.status === "done") {
+              clearInterval(poll);
+              setProgress(95);
+              setProgressLabel("Preparing results...");
+              await new Promise(r => setTimeout(r, 300));
+              setResults(status.results);
+              setSummary({
+                total: status.total,
+                matchCount: status.matchCount,
+                possibleCount: status.possibleCount,
+              });
+              setProgress(100);
+              setProgressLabel("Done!");
+              toast.success(`Screening complete: ${status.total} names processed`);
+              resolve();
+            } else if (status.status === "error") {
+              clearInterval(poll);
+              reject(new Error(status.error || "Processing failed"));
+            }
+          } catch (pollErr) {
+            clearInterval(poll);
+            reject(pollErr);
+          }
+        }, 1500);
+      });
 
-      setResults(data.results);
-      setSummary({ total: data.total, matchCount: data.matchCount, possibleCount: data.possibleCount });
-      setProgress(100);
-      setProgressLabel("Done!");
-
-      toast.success(`Screening complete: ${data.total} names processed`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Batch screening failed");
       setProgress(0);

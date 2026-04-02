@@ -1,11 +1,13 @@
 /**
- * Batch Screening Handler
- * Processes an uploaded Excel file, screens each name against the sanctions DB,
- * and returns results as JSON (for the UI) or exports them as Excel.
+ * Batch Screening Handler — Async Job Architecture
  *
- * PERFORMANCE FIX: loadAllRecordsForBatch() + buildBatchFuseIndex() are called
- * ONCE per batch request. All 400+ names are then screened in-memory with
- * batchSearchOne() — no repeated DB calls per name.
+ * Flow:
+ *  1. POST /api/batch/screen  → parse Excel, create job, start processing in background, return jobId immediately
+ *  2. GET  /api/batch/status/:jobId → return { status, progress, results } — client polls this
+ *  3. POST /api/batch/export  → accepts JSON results, returns Excel file
+ *
+ * This prevents HTTP timeouts for large files (200+ names) because the response
+ * is returned immediately and processing happens asynchronously.
  */
 import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
@@ -13,63 +15,60 @@ import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne } from "./s
 import { createContext } from "./_core/context";
 import { createAuditLog } from "./db";
 
+// ─── In-memory job store ──────────────────────────────────────────────────────
+// For a single-server deployment this is sufficient. Jobs expire after 30 min.
+
+interface BatchJob {
+  id: string;
+  status: "pending" | "processing" | "done" | "error";
+  progress: number;   // 0-100
+  total: number;
+  processed: number;
+  results: BatchRow[];
+  matchCount: number;
+  possibleCount: number;
+  error?: string;
+  createdAt: number;
+}
+
+const jobs = new Map<string, BatchJob>();
+
+// Cleanup jobs older than 30 minutes every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  jobs.forEach((job, id) => {
+    if (job.createdAt < cutoff) jobs.delete(id);
+  });
+}, 5 * 60 * 1000);
+
+function generateJobId(): string {
+  return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // ─── Batch-specific matching helpers ─────────────────────────────────────────
 
-/** Normalize text for comparison: remove diacritics, unify Arabic chars, lowercase */
 function batchNormalize(text: string): string {
   return text
     .replace(/[أإآا]/g, "ا")
     .replace(/[ةه]/g, "ه")
     .replace(/[يى]/g, "ي")
-    .replace(/[\u064B-\u065F]/g, "") // strip diacritics
+    .replace(/[\u064B-\u065F]/g, "")
     .toLowerCase()
-    .replace(/[^\u0600-\u06FFa-z0-9\s]/g, " ") // keep Arabic + Latin + digits
+    .replace(/[^\u0600-\u06FFa-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/** Common Arabic words that should NOT count as meaningful matches */
 const STOP_WORDS = new Set([
   "شركة", "مؤسسة", "مجموعة", "عبد", "ابن", "بن", "ال", "محمد", "احمد",
   "the", "al", "el", "bin", "ibn", "and", "of", "for", "co", "ltd", "inc",
   "llc", "corp", "group", "company", "trading", "international",
 ]);
 
-/**
- * Word Overlap Score — measures how many meaningful words are shared
- * between the submitted name and the matched name.
- * Returns a value 0-1. A score < 0.35 means the names share too few words.
- */
-function wordOverlapScore(nameA: string, nameB: string): number {
-  const tokensA = batchNormalize(nameA)
-    .split(/\s+/)
-    .filter(t => t.length >= 2 && !STOP_WORDS.has(t));
-  const tokensB = batchNormalize(nameB)
-    .split(/\s+/)
-    .filter(t => t.length >= 2 && !STOP_WORDS.has(t));
-
-  if (tokensA.length === 0 || tokensB.length === 0) return 0;
-
-  // Count tokens in A that have a close match (≥ 80% Levenshtein) in B
-  let matched = 0;
-  for (const ta of tokensA) {
-    for (const tb of tokensB) {
-      const maxLen = Math.max(ta.length, tb.length);
-      if (maxLen === 0) continue;
-      // Simple character-level similarity
-      const dist = levenshteinDist(ta, tb);
-      const sim = 1 - dist / maxLen;
-      if (sim >= 0.80) { matched++; break; }
-    }
-  }
-
-  // Overlap = matched / min(tokensA, tokensB) — penalizes if few words match
-  return matched / Math.min(tokensA.length, tokensB.length);
-}
-
-/** Simple Levenshtein distance (iterative, no external dep) */
 function levenshteinDist(a: string, b: string): number {
   const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
   const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
     Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
   );
@@ -79,6 +78,23 @@ function levenshteinDist(a: string, b: string): number {
         ? dp[i-1][j-1]
         : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
   return dp[m][n];
+}
+
+function wordOverlapScore(nameA: string, nameB: string): number {
+  const tokensA = batchNormalize(nameA).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+  const tokensB = batchNormalize(nameB).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+
+  let matched = 0;
+  for (const ta of tokensA) {
+    for (const tb of tokensB) {
+      const maxLen = Math.max(ta.length, tb.length);
+      if (maxLen === 0) continue;
+      const sim = 1 - levenshteinDist(ta, tb) / maxLen;
+      if (sim >= 0.80) { matched++; break; }
+    }
+  }
+  return matched / Math.min(tokensA.length, tokensB.length);
 }
 
 export interface BatchRow {
@@ -94,7 +110,109 @@ export interface BatchRow {
   recordId: number | null;
 }
 
-/** POST /api/batch/screen — accepts multipart Excel, returns JSON results */
+// ─── Background processing function ──────────────────────────────────────────
+
+async function processJobInBackground(
+  jobId: string,
+  names: { row: number; name: string }[],
+  userId: number,
+  companyId: number | undefined,
+  userName: string | undefined,
+  ipAddress: string,
+  userAgent: string
+) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  try {
+    job.status = "processing";
+
+    // Load all DB records ONCE
+    const allRecords = await loadAllRecordsForBatch();
+    const fuseIndex = buildBatchFuseIndex(allRecords);
+
+    const results: BatchRow[] = [];
+    const CHUNK_SIZE = 20; // process in chunks to allow progress updates
+
+    for (let i = 0; i < names.length; i += CHUNK_SIZE) {
+      const chunk = names.slice(i, i + CHUNK_SIZE);
+
+      for (const { row, name } of chunk) {
+        const candidates = batchSearchOne(name, allRecords, fuseIndex, 0.60, 3);
+
+        let status: BatchRow["status"] = "NO_MATCH";
+        let chosenTop = candidates[0] ?? null;
+
+        for (const candidate of candidates) {
+          const candidateName = candidate.nameEn || candidate.nameAr || "";
+          const overlap = wordOverlapScore(name, candidateName);
+          const overlapAr = candidate.nameAr ? wordOverlapScore(name, candidate.nameAr) : 0;
+          const bestOverlap = Math.max(overlap, overlapAr);
+          const score = candidate.matchScore;
+
+          if (score >= 90 && bestOverlap >= 0.40) {
+            status = "MATCH";
+            chosenTop = candidate;
+            break;
+          } else if (score >= 70 && bestOverlap >= 0.35) {
+            status = "POSSIBLE_MATCH";
+            chosenTop = candidate;
+          }
+        }
+
+        results.push({
+          rowNumber: row,
+          submittedName: name,
+          status,
+          matchScore: chosenTop ? chosenTop.matchScore : 0,
+          matchedName: chosenTop?.nameEn ?? null,
+          matchedNameAr: chosenTop?.nameAr ?? null,
+          entityType: chosenTop?.entityType ?? null,
+          issuingBody: chosenTop?.issuingBody ?? null,
+          listingDate: chosenTop?.listingDate ?? null,
+          recordId: chosenTop?.id ?? null,
+        });
+      }
+
+      // Update progress after each chunk
+      job.processed = Math.min(i + CHUNK_SIZE, names.length);
+      job.progress = Math.round((job.processed / job.total) * 100);
+
+      // Yield to event loop between chunks to prevent blocking
+      await new Promise(resolve => setImmediate(resolve));
+    }
+
+    job.results = results;
+    job.matchCount = results.filter(r => r.status === "MATCH").length;
+    job.possibleCount = results.filter(r => r.status === "POSSIBLE_MATCH").length;
+    job.status = "done";
+    job.progress = 100;
+
+    // Audit log
+    await createAuditLog({
+      userId,
+      companyId,
+      userName,
+      action: "search",
+      query: `batch:${names.length} names`,
+      resultsCount: job.matchCount + job.possibleCount,
+      ipAddress,
+      userAgent,
+    });
+
+  } catch (err) {
+    console.error("[batch-job]", err);
+    const job = jobs.get(jobId);
+    if (job) {
+      job.status = "error";
+      job.error = err instanceof Error ? err.message : "Unknown error";
+    }
+  }
+}
+
+// ─── Route Handlers ───────────────────────────────────────────────────────────
+
+/** POST /api/batch/screen — accepts multipart Excel, returns jobId immediately */
 export async function handleBatchScreen(req: Request, res: Response) {
   try {
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
@@ -105,7 +223,10 @@ export async function handleBatchScreen(req: Request, res: Response) {
 
     // Parse Excel
     const workbook = new ExcelJS.Workbook();
-    const arrayBuffer = file.buffer.buffer.slice(file.buffer.byteOffset, file.buffer.byteOffset + file.buffer.byteLength);
+    const arrayBuffer = file.buffer.buffer.slice(
+      file.buffer.byteOffset,
+      file.buffer.byteOffset + file.buffer.byteLength
+    );
     await workbook.xlsx.load(arrayBuffer as ArrayBuffer);
     const worksheet = workbook.worksheets[0];
     if (!worksheet) return res.status(400).json({ error: "Empty workbook" });
@@ -113,7 +234,7 @@ export async function handleBatchScreen(req: Request, res: Response) {
     // Extract names from first column (skip header row)
     const names: { row: number; name: string }[] = [];
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // skip header
+      if (rowNumber === 1) return;
       const cell = row.getCell(1);
       const value = cell.text?.trim() || String(cell.value ?? "").trim();
       if (value && value.length > 0) {
@@ -125,85 +246,64 @@ export async function handleBatchScreen(req: Request, res: Response) {
       return res.status(400).json({ error: "No names found in the first column" });
     }
 
-    if (names.length > 600) {
-      return res.status(400).json({ error: "Maximum 500 names per batch. Please split your file." });
+    if (names.length > 1000) {
+      return res.status(400).json({ error: "Maximum 1000 names per batch. Please split your file." });
     }
 
-    // ── PERFORMANCE: Load all DB records ONCE, build Fuse index ONCE ──────────
-    const allRecords = await loadAllRecordsForBatch();
-    const fuseIndex = buildBatchFuseIndex(allRecords);
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Screen each name using in-memory search (no DB calls per name)
-    const results: BatchRow[] = [];
-    for (const { row, name } of names) {
-      const candidates = batchSearchOne(name, allRecords, fuseIndex, 0.60, 3);
-
-      // ── Dual-gate classification ──────────────────────────────────────────
-      // Gate 1: matchScore >= threshold
-      // Gate 2: wordOverlap >= 0.40 (at least 40% of meaningful words match)
-      // Both gates must pass for MATCH or POSSIBLE_MATCH.
-      let status: BatchRow["status"] = "NO_MATCH";
-      let chosenTop = candidates[0] ?? null;
-
-      for (const candidate of candidates) {
-        const candidateName = candidate.nameEn || candidate.nameAr || "";
-        const overlap = wordOverlapScore(name, candidateName);
-
-        // Also check Arabic name if available
-        const overlapAr = candidate.nameAr
-          ? wordOverlapScore(name, candidate.nameAr)
-          : 0;
-        const bestOverlap = Math.max(overlap, overlapAr);
-
-        const score = candidate.matchScore; // already 0-100
-
-        if (score >= 90 && bestOverlap >= 0.40) {
-          status = "MATCH";
-          chosenTop = candidate;
-          break;
-        } else if (score >= 70 && bestOverlap >= 0.35) {
-          status = "POSSIBLE_MATCH";
-          chosenTop = candidate;
-          // don't break — keep looking for a better MATCH
-        }
-      }
-
-      const top = chosenTop;
-
-      results.push({
-        rowNumber: row,
-        submittedName: name,
-        status,
-        matchScore: top ? top.matchScore : 0,
-        matchedName: top?.nameEn ?? null,
-        matchedNameAr: top?.nameAr ?? null,
-        entityType: top?.entityType ?? null,
-        issuingBody: top?.issuingBody ?? null,
-        listingDate: top?.listingDate ?? null,
-        recordId: top?.id ?? null,
-      });
-    }
-
-    // Audit log
-    const matchCount = results.filter(r => r.status === "MATCH").length;
-    const possibleCount = results.filter(r => r.status === "POSSIBLE_MATCH").length;
-    await createAuditLog({
-      userId: ctx.user.id,
-      companyId: ctx.user.companyId ?? undefined,
-      userName: ctx.user.name ?? undefined,
-      action: "search",
-      query: `batch:${names.length} names`,
-      resultsCount: matchCount + possibleCount,
-      ipAddress: ctx.req.headers["x-forwarded-for"] as string ?? "unknown",
-      userAgent: ctx.req.headers["user-agent"] ?? "unknown",
+    // Create job
+    const jobId = generateJobId();
+    jobs.set(jobId, {
+      id: jobId,
+      status: "pending",
+      progress: 0,
+      total: names.length,
+      processed: 0,
+      results: [],
+      matchCount: 0,
+      possibleCount: 0,
+      createdAt: Date.now(),
     });
 
-    return res.json({ results, total: names.length, matchCount, possibleCount });
+    // Start background processing (non-blocking)
+    processJobInBackground(
+      jobId,
+      names,
+      Number(ctx.user.id),
+      ctx.user.companyId != null ? Number(ctx.user.companyId) : undefined,
+      ctx.user.name ?? undefined,
+      ctx.req.headers["x-forwarded-for"] as string ?? "unknown",
+      ctx.req.headers["user-agent"] ?? "unknown"
+    );
+
+    // Return jobId immediately — client will poll /api/batch/status/:jobId
+    return res.json({ jobId, total: names.length });
+
   } catch (err) {
     console.error("[batch-screen]", err);
     return res.status(500).json({ error: "Internal server error" });
   }
+}
+
+/** GET /api/batch/status/:jobId — returns job progress and results when done */
+export async function handleBatchStatus(req: Request, res: Response) {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+
+  if (!job) {
+    return res.status(404).json({ error: "Job not found or expired" });
+  }
+
+  return res.json({
+    jobId: job.id,
+    status: job.status,
+    progress: job.progress,
+    total: job.total,
+    processed: job.processed,
+    results: job.status === "done" ? job.results : [],
+    matchCount: job.matchCount,
+    possibleCount: job.possibleCount,
+    error: job.error,
+  });
 }
 
 /** POST /api/batch/export — accepts JSON results, returns Excel file */
@@ -223,7 +323,6 @@ export async function handleBatchExport(req: Request, res: Response) {
 
     const ws = workbook.addWorksheet("Batch Screening Results");
 
-    // Column definitions
     ws.columns = [
       { header: "#",                 key: "rowNumber",     width: 6  },
       { header: "Submitted Name",    key: "submittedName", width: 35 },
@@ -237,17 +336,15 @@ export async function handleBatchExport(req: Request, res: Response) {
       { header: "Record ID",         key: "recordId",      width: 12 },
     ];
 
-    // Style header row
     const headerRow = ws.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
     headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1B3A6B" } };
     headerRow.alignment = { vertical: "middle", horizontal: "center" };
     headerRow.height = 22;
 
-    // Add data rows with conditional coloring
     for (const row of results) {
       const dataRow = ws.addRow({
-        rowNumber:     row.rowNumber - 1, // user-facing row (1-based, minus header)
+        rowNumber:     row.rowNumber - 1,
         submittedName: row.submittedName,
         status:        row.status.replace("_", " "),
         matchScore:    row.matchScore,
@@ -259,7 +356,6 @@ export async function handleBatchExport(req: Request, res: Response) {
         recordId:      row.recordId ?? "—",
       });
 
-      // Color status cell
       const statusCell = dataRow.getCell("status");
       if (row.status === "MATCH") {
         statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE8E8" } };
@@ -272,10 +368,9 @@ export async function handleBatchExport(req: Request, res: Response) {
         statusCell.font = { bold: true, color: { argb: "FF1B5E20" } };
       }
 
-      // Alternate row shading
       if (dataRow.number % 2 === 0) {
         dataRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum !== 3) { // skip status cell (already colored)
+          if (colNum !== 3) {
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8F9FA" } };
           }
         });
@@ -284,10 +379,8 @@ export async function handleBatchExport(req: Request, res: Response) {
       dataRow.alignment = { vertical: "middle" };
     }
 
-    // Auto-filter
     ws.autoFilter = { from: "A1", to: "J1" };
 
-    // Summary sheet
     const summary = workbook.addWorksheet("Summary");
     const total = results.length;
     const matchCount = results.filter(r => r.status === "MATCH").length;
@@ -312,10 +405,8 @@ export async function handleBatchExport(req: Request, res: Response) {
     summary.getColumn(2).width = 15;
     summary.getColumn(3).width = 15;
 
-    // Stream response
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",
-      `attachment; filename="batch-screening-${Date.now()}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="batch-screening-${Date.now()}.xlsx"`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {
