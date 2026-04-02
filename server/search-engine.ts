@@ -162,9 +162,12 @@ function levenshteinSimilarity(a: string, b: string): number {
   const dist = levenshtein.get(a, b);
   return 1 - dist / maxLen;
 }
+// ─── Token-based similarity ────────────────────────────────────────────────────
 
-// ─── Token-based similarity ───────────────────────────────────────────────────
-
+/**
+ * One-directional token similarity: for each query token, find best match in target.
+ * Order-independent.
+ */
 function tokenSimilarity(query: string, target: string): number {
   const qTokens = normalize(query).split(/\s+/).filter(Boolean);
   const tTokens = normalize(target).split(/\s+/).filter(Boolean);
@@ -180,6 +183,39 @@ function tokenSimilarity(query: string, target: string): number {
     totalScore += best;
   }
   return totalScore / qTokens.length;
+}
+
+/**
+ * Bidirectional token overlap score.
+ * Measures how many tokens from BOTH sides find a good match in the other side.
+ * This handles name order differences (e.g., "Ahmed Khaled Yahya AL-SHAHARE" vs "AL-SHAHARE AHMED KHALED YAHYA").
+ * Returns a score 0-1 based on weighted F1 of matched tokens.
+ */
+function bidirectionalTokenScore(query: string, target: string, fuzzyThreshold = 0.75): number {
+  const qTokens = normalize(query).split(/\s+/).filter(t => t.length >= 2);
+  const tTokens = normalize(target).split(/\s+/).filter(t => t.length >= 2);
+  if (qTokens.length === 0 || tTokens.length === 0) return 0;
+
+  // Count how many query tokens have a good match in target
+  let qMatched = 0;
+  for (const qt of qTokens) {
+    const bestMatch = Math.max(...tTokens.map(tt => levenshteinSimilarity(qt, tt)));
+    if (bestMatch >= fuzzyThreshold) qMatched++;
+  }
+
+  // Count how many target tokens have a good match in query
+  let tMatched = 0;
+  for (const tt of tTokens) {
+    const bestMatch = Math.max(...qTokens.map(qt => levenshteinSimilarity(qt, tt)));
+    if (bestMatch >= fuzzyThreshold) tMatched++;
+  }
+
+  const precision = qMatched / qTokens.length; // how much of query is covered
+  const recall = tMatched / tTokens.length;    // how much of target is covered
+
+  if (precision + recall === 0) return 0;
+  // F1-like score, weighted toward precision (query coverage is more important)
+  return (2.5 * precision * recall) / (1.5 * precision + recall);
 }
 
 // ─── Score a single record ────────────────────────────────────────────────────
@@ -217,7 +253,7 @@ function scoreRecord(
     return { score: 0.88, matchType: "exact" };
   }
 
-  // 3. Token-based similarity
+  // 3. Token-based similarity (one-directional)
   const enTokenScore = Math.max(
     tokenSimilarity(query, record.nameEn || ""),
     tokenSimilarity(rawQuery, rawNameEn)
@@ -225,19 +261,35 @@ function scoreRecord(
   const arTokenScore = tokenSimilarity(query, record.nameAr || "");
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
 
-  // 3b. Transliteration-based token similarity (Arabic query vs English name)
+  // 3b. Bidirectional token score (handles different word order)
+  const biEn = Math.max(
+    bidirectionalTokenScore(query, record.nameEn || ""),
+    bidirectionalTokenScore(rawQuery, rawNameEn)
+  );
+  const biAr = bidirectionalTokenScore(query, record.nameAr || "");
+  const biAlt = Math.max(0, ...altNames.map((n) => bidirectionalTokenScore(query, n)));
+
+  // 3c. Transliteration-based token similarity (Arabic query vs English name)
   let transTokenScore = 0;
+  let transBiScore = 0;
   if (transQuery) {
     transTokenScore = Math.max(
       tokenSimilarity(transQuery, record.nameEn || ""),
       tokenSimilarity(transQuery, rawNameEn)
     );
-    // Also check transliterated query against alt names
     const transAltScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(transQuery, n)));
     transTokenScore = Math.max(transTokenScore, transAltScore);
+
+    // Bidirectional transliteration score
+    transBiScore = Math.max(
+      bidirectionalTokenScore(transQuery, record.nameEn || ""),
+      bidirectionalTokenScore(transQuery, rawNameEn),
+      ...altNames.map((n) => bidirectionalTokenScore(transQuery, n))
+    );
   }
 
   const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore, transTokenScore);
+  const biScore = Math.max(biEn, biAr, biAlt, transBiScore);
 
   // 4. Full Levenshtein
   const levEn = Math.max(
@@ -245,7 +297,6 @@ function scoreRecord(
     levenshteinSimilarity(rawQuery, rawNameEn)
   );
   const levAr = levenshteinSimilarity(nQuery, nNameAr);
-  // Transliteration-based Levenshtein
   const levTrans = transQuery
     ? Math.max(
         levenshteinSimilarity(transQuery, rawNameEn),
@@ -254,7 +305,12 @@ function scoreRecord(
     : 0;
   const levScore = Math.max(levEn, levAr, levTrans);
 
-  const finalScore = Math.max(tokenScore * 0.85, levScore * 0.75);
+  // Combine: bidirectional token score gets highest weight since it handles order-independent matching
+  const finalScore = Math.max(
+    biScore * 0.95,       // bidirectional token overlap (best for multi-word names)
+    tokenScore * 0.85,   // one-directional token
+    levScore * 0.75      // full string levenshtein
+  );
 
   if (finalScore >= 0.9) return { score: finalScore, matchType: "exact" };
   if (finalScore >= 0.6) return { score: finalScore, matchType: "fuzzy" };
@@ -323,10 +379,12 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   // Combine all sets, deduplicate
   const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
 
-  // For short queries (1-2 meaningful words), also try the full query as a phrase
-  const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of'].includes(t));
+  // Filter out stop words but keep all meaningful tokens
+  const stopWords = new Set(['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el']);
+  const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !stopWords.has(t));
   const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
 
+  // Each token is searched independently with OR — ensures we find records even if word order differs
   const likeConditions = termsToSearch.flatMap((term) => [
     like(sanctionsRecords.nameEn, `%${term}%`),
     like(sanctionsRecords.nameAr, `%${term}%`),
