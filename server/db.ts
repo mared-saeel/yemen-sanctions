@@ -119,8 +119,8 @@ export async function updateUserPassword(userId: number, passwordHash: string) {
 
 export async function deleteUser(userId: number) {
   const db = await getDb();
-  if (!db) return;
-  await db.update(users).set({ isActive: false }).where(eq(users.id, userId));
+  if (!db) throw new Error("Database not available");
+  await db.delete(users).where(eq(users.id, userId));
 }
 
 export async function updateUserLastSignIn(userId: number) {
