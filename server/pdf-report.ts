@@ -58,50 +58,74 @@ function renderMixedRTL(
   sz: number,
   color = BLACK
 ): void {
-  // Split text into words, group consecutive Arabic/non-Arabic words
-  const words = text.split(/(\s+)/);
+  // Normalize multiple spaces to single space
+  const cleanText = text.replace(/\s+/g, ' ').trim();
+  // Split into tokens by spaces
+  const tokens = cleanText.split(' ');
   const groups: { text: string; isAr: boolean }[] = [];
   let cur: { text: string; isAr: boolean } | null = null;
 
-  for (const word of words) {
-    if (!word) continue;
-    const isSpace = /^\s+$/.test(word);
-    if (isSpace) { if (cur) cur.text += " "; continue; }
-    const wordIsAr = /[\u0600-\u06FF]/.test(word);
+  for (const token of tokens) {
+    if (!token) continue;
+    // Token is Arabic if it contains Arabic chars
+    // Neutral punctuation (()[]{}) with no EN chars: inherit from previous group
+    const arChars = (token.match(/[\u0600-\u06FF]/g) || []).length;
+    const enChars = (token.match(/[a-zA-Z0-9]/g) || []).length;
+    const prevIsAr: boolean = cur !== null ? cur.isAr : false;
+    const tokenIsAr: boolean = arChars > 0 || (enChars === 0 && prevIsAr);
     if (!cur) {
-      cur = { text: word, isAr: wordIsAr };
-    } else if (wordIsAr === cur.isAr) {
-      cur.text += " " + word;
+      cur = { text: token, isAr: tokenIsAr };
+    } else if (tokenIsAr === cur.isAr) {
+      cur.text += ' ' + token;
     } else {
       groups.push(cur);
-      cur = { text: word, isAr: wordIsAr };
+      cur = { text: token, isAr: tokenIsAr };
     }
   }
   if (cur && cur.text.trim()) groups.push(cur);
 
-  // Reverse groups for RTL visual order
+  // Reverse groups for RTL visual order (Arabic first from right)
   groups.reverse();
+
+  // Post-process: split leading/trailing parentheses from Arabic groups
+  // so they render with FONT_EN (which supports them) instead of FONT_AR
+  const finalGroups: { text: string; isAr: boolean }[] = [];
+  for (const g of groups) {
+    if (g.isAr) {
+      const m = g.text.match(/^([\(\[\{]*)((?:[\s\S])*?)([\)\]\}]*)$/);
+      if (m) {
+        const lead = m[1], core = m[2].trim(), trail = m[3];
+        if (trail) finalGroups.push({ text: trail, isAr: false });
+        if (core) finalGroups.push({ text: core, isAr: true });
+        if (lead) finalGroups.push({ text: lead, isAr: false });
+      } else {
+        finalGroups.push(g);
+      }
+    } else {
+      finalGroups.push(g);
+    }
+  }
 
   // Measure widths
   const widths: number[] = [];
-  for (const g of groups) {
+  for (const g of finalGroups) {
     doc.font(g.isAr ? FONT_AR : FONT_EN).fontSize(sz);
     widths.push(doc.widthOfString(g.text.trim()) + 6);
   }
 
   // Render right-to-left
   let curX = x + w;
-  for (let i = 0; i < groups.length; i++) {
-    const g = groups[i];
+  for (let i = 0; i < finalGroups.length; i++) {
+    const g = finalGroups[i];
     const gW = widths[i];
     curX -= gW;
     if (g.isAr) {
       doc.font(FONT_AR).fontSize(sz).fillColor(color);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (doc as any).text(g.text.trim(), curX, y, { align: "right", features: AR_FEAT, width: gW, lineBreak: false });
+      (doc as any).text(g.text.trim(), curX, y, { align: 'right', features: AR_FEAT, width: gW, lineBreak: false });
     } else {
       doc.font(FONT_EN).fontSize(sz).fillColor(color);
-      doc.text(g.text.trim(), curX, y, { align: "left", width: gW, lineBreak: false });
+      doc.text(g.text.trim(), curX, y, { align: 'left', width: gW, lineBreak: false });
     }
   }
 }
@@ -181,15 +205,17 @@ function renderValue(
   // Count Arabic chars vs Latin letters — if Arabic dominates, treat as Arabic
   const arChars = (text.match(/[\u0600-\u06FF]/g) || []).length;
   const enLetters = (text.match(/[a-zA-Z]/g) || []).length;
-  const arDominant = hasAr && arChars > enLetters;
+  // Pure Arabic (no Latin letters at all) → use Arabic font directly
+  // Any mix of Arabic + Latin → always use mixed renderer to avoid font fallback issues
+  const arDominant = hasAr && enLetters === 0;
 
   if (arDominant) {
-    // Arabic-dominant text: render directly with Arabic font (no BiDi needed)
+    // Pure Arabic text: render directly with Arabic font (no BiDi needed)
     doc.font(FONT_AR).fontSize(sz).fillColor(color);
     arText(doc, text, x, y, w);
     return y + sz + 2;
-  } else if (hasAr && !arDominant) {
-    // True mixed Arabic+English: split into word-groups and render each with correct font
+  } else if (hasAr) {
+    // Mixed Arabic+English: split into word-groups and render each with correct font
     renderMixedRTL(doc, text, x, y, w, sz, color);
     return y + sz + 2;
   } else {
