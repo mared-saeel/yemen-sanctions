@@ -45,8 +45,20 @@ function parseRawNotes(rawNotes: string | null | undefined) {
     result.alternativeNames = altMatch[1].split(",").map((n: string) => n.trim()).filter(Boolean);
   }
 
-  const notesMatch = str.match(/ملاحظات:\s*([^|]+)/);
-  if (notesMatch) result.notes = notesMatch[1].trim();
+  // استخراج الملاحظات الكاملة: كل شيء بعد "ملاحظات:" حتى نهاية النص أو مفتاح معروف آخر
+  const notesIdx = str.indexOf('ملاحظات:');
+  if (notesIdx !== -1) {
+    const afterNotes = str.slice(notesIdx + 'ملاحظات:'.length).trim();
+    const knownKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:'];
+    let endIdx = afterNotes.length;
+    for (const key of knownKeys) {
+      const idx1 = afterNotes.indexOf('| ' + key);
+      if (idx1 !== -1 && idx1 < endIdx) endIdx = idx1;
+      const idx2 = afterNotes.indexOf('|' + key);
+      if (idx2 !== -1 && idx2 < endIdx) endIdx = idx2;
+    }
+    result.notes = afterNotes.slice(0, endIdx).trim();
+  }
 
   const refMatch = str.match(/الرقم المرجعي:\s*([^|]+)/);
   if (refMatch) result.referenceNumber = refMatch[1].trim();

@@ -201,3 +201,9 @@ Detected
 - [ ] Single page layout with compressed font sizes
 - [ ] Test and verify single page output
 - [ ] Save checkpoint and publish
+
+## Phase 25: إصلاح عرض الملاحظات الكاملة
+- [ ] إزالة اقتطاع النص في قسم Notes في RecordModal.tsx
+- [ ] إزالة اقتطاع النص في قسم Notes في RecordDetail.tsx
+- [ ] إزالة اقتطاع النص في تقرير PDF (pdf-report.ts)
+- [ ] التحقق من عرض الملاحظات الكاملة في جميع الأماكن

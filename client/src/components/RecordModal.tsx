@@ -10,6 +10,86 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+// Parse rawNotes string into structured fields
+function parseRawNotes(rawNotes: string | null | undefined) {
+  const result: {
+    nationality: string | null;
+    dateOfBirth: string | null;
+    placeOfBirth: string | null;
+    alternativeNames: string[];
+    notes: string | null;
+    referenceNumber: string | null;
+    addresses: string[];
+    addressCount: number | null;
+  } = {
+    nationality: null,
+    dateOfBirth: null,
+    placeOfBirth: null,
+    alternativeNames: [],
+    notes: null,
+    referenceNumber: null,
+    addresses: [],
+    addressCount: null,
+  };
+
+  if (!rawNotes) return result;
+  const str = String(rawNotes);
+
+  const natMatch = str.match(/الجنسية:\s*([^|]+)/);
+  if (natMatch) result.nationality = natMatch[1].trim();
+
+  const dobMatch = str.match(/تاريخ الميلاد:\s*([^|]+)/);
+  if (dobMatch) result.dateOfBirth = dobMatch[1].trim();
+
+  const pobMatch = str.match(/مكان الميلاد:\s*([^|]+)/);
+  if (pobMatch) result.placeOfBirth = pobMatch[1].trim();
+
+  const altMatch = str.match(/أسماء بديلة:\s*([^|]+)/);
+  if (altMatch) {
+    result.alternativeNames = altMatch[1].split(",").map((n: string) => n.trim()).filter(Boolean);
+  }
+
+  // Also extract AKA from rawNotes format like "AKA: name1; name2"
+  const akaMatch = str.match(/AKA:\s*([^|\n]+)/);
+  if (akaMatch && result.alternativeNames.length === 0) {
+    result.alternativeNames = akaMatch[1].split(";").map((n: string) => n.trim()).filter(Boolean);
+  }
+
+  // استخراج الملاحظات الكاملة: كل شيء بعد "ملاحظات:" حتى نهاية النص أو مفتاح معروف آخر
+  const notesIdx = str.indexOf('ملاحظات:');
+  if (notesIdx !== -1) {
+    const afterNotes = str.slice(notesIdx + 'ملاحظات:'.length).trim();
+    const knownKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:'];
+    let endIdx = afterNotes.length;
+    for (const key of knownKeys) {
+      const idx1 = afterNotes.indexOf('| ' + key);
+      if (idx1 !== -1 && idx1 < endIdx) endIdx = idx1;
+      const idx2 = afterNotes.indexOf('|' + key);
+      if (idx2 !== -1 && idx2 < endIdx) endIdx = idx2;
+    }
+    result.notes = afterNotes.slice(0, endIdx).trim();
+  } else if (!result.notes && str.includes("|")) {
+    // إذا لم يكن هناك مفتاح ملاحظات صريح، استخدم النص قبل أول |
+    const beforePipe = str.split("|")[0].replace(/\[عدد العناوين:\s*\d+\]/, "").trim();
+    if (beforePipe.length > 10) result.notes = beforePipe;
+  } else if (!result.notes && str.length > 10) {
+    result.notes = str;
+  }
+
+  const refMatch = str.match(/الرقم المرجعي:\s*([^|]+)/);
+  if (refMatch) result.referenceNumber = refMatch[1].trim();
+
+  const addrCountMatch = str.match(/\[عدد العناوين:\s*(\d+)\]/);
+  if (addrCountMatch) result.addressCount = parseInt(addrCountMatch[1]);
+
+  const addrMatch = str.match(/العنوان:\s*([^|]+)/g);
+  if (addrMatch) {
+    result.addresses = addrMatch.map(a => a.replace(/العنوان:\s*/, "").trim());
+  }
+
+  return result;
+}
+
 interface RecordModalProps {
   recordId: number;
   onClose: () => void;
@@ -55,6 +135,20 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
     record?.entityType === "organisation" ? <Building2 size={16} /> :
     record?.entityType === "vessel" ? <Ship size={16} /> :
     <HelpCircle size={16} />;
+
+  // Parse rawNotes for additional fields
+  const parsed = parseRawNotes(record?.rawNotes);
+
+  // Merge: prefer DB fields, fallback to parsed rawNotes
+  const nationality = record?.nationality || parsed.nationality;
+  const dateOfBirth = record?.dateOfBirth || parsed.dateOfBirth;
+  const placeOfBirth = record?.placeOfBirth || parsed.placeOfBirth;
+  const referenceNumber = record?.referenceNumber || parsed.referenceNumber;
+  const notes = record?.notes || parsed.notes;
+
+  // Merge alternative names (DB + parsed, deduplicated)
+  const dbAltNames: string[] = Array.isArray(record?.alternativeNames) ? record!.alternativeNames as string[] : [];
+  const allAltNames = Array.from(new Set([...dbAltNames, ...parsed.alternativeNames]));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -131,13 +225,13 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
               </div>
 
               {/* Alternative Names */}
-              {record.alternativeNames && (record.alternativeNames as string[]).length > 0 && (
+              {allAltNames.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Alternative Names / AKA
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {(record.alternativeNames as string[]).map((name, i) => (
+                    {allAltNames.map((name, i) => (
                       <Badge key={i} variant="secondary" className="text-xs font-normal">
                         {name}
                       </Badge>
@@ -154,9 +248,9 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: "Entity Type", value: record.entityType, icon: entityIcon },
-                    { label: "Nationality", value: record.nationality, icon: <Globe size={13} /> },
-                    { label: "Date of Birth", value: record.dateOfBirth, icon: <Calendar size={13} /> },
-                    { label: "Place of Birth", value: record.placeOfBirth, icon: <MapPin size={13} /> },
+                    { label: "Nationality / الجنسية", value: nationality, icon: <Globe size={13} /> },
+                    { label: "Date of Birth / تاريخ الميلاد", value: dateOfBirth, icon: <Calendar size={13} /> },
+                    { label: "Place of Birth / مكان الميلاد", value: placeOfBirth, icon: <MapPin size={13} /> },
                   ].map((item) => item.value && (
                     <div key={item.label} className="bg-muted/40 rounded-lg p-3 border border-border/50">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
@@ -180,7 +274,8 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                     { label: "Listing Reason", value: record.listingReason },
                     { label: "Listing Date", value: record.listingDate },
                     { label: "Legal Basis", value: record.legalBasis },
-                    { label: "Reference Number", value: record.referenceNumber },
+                    { label: "Reference Number", value: referenceNumber },
+                    { label: "Action Taken / الإجراء", value: record.actionTaken },
                   ].map((item) => item.value && (
                     <div key={item.label} className="bg-muted/40 rounded-lg p-3 border border-border/50">
                       <div className="text-xs text-muted-foreground mb-1">{item.label}</div>
@@ -190,15 +285,43 @@ export default function RecordModal({ recordId, onClose }: RecordModalProps) {
                 </div>
               </div>
 
+              {/* Addresses */}
+              {parsed.addresses.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <MapPin size={12} />
+                    Addresses / العناوين {parsed.addressCount ? `(${parsed.addressCount})` : ""}
+                  </h3>
+                  <div className="space-y-2">
+                    {parsed.addresses.map((addr, i) => (
+                      <div key={i} className="bg-muted/40 rounded-lg p-3 text-sm text-foreground border border-border/50">{addr}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Notes */}
-              {record.notes && (
+              {notes && (
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <FileText size={12} />
-                    Notes
+                    Notes / ملاحظات
                   </h3>
                   <div className="bg-muted/40 rounded-lg p-3 text-sm text-muted-foreground leading-relaxed border border-border/50">
-                    {record.notes}
+                    {notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Raw Notes Full */}
+              {record.rawNotes && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText size={12} />
+                    Full Source Notes / النص الكامل
+                  </h3>
+                  <div className="bg-muted/20 border border-border rounded-lg p-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap" dir="auto">
+                    {record.rawNotes}
                   </div>
                 </div>
               )}

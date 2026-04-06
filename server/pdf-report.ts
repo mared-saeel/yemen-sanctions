@@ -59,15 +59,31 @@ function parseRawNotesForPdf(raw: string | null | undefined) {
   const dobMatch = str.match(/تاريخ الميلاد:\s*([^|]+)/);
   const pobMatch = str.match(/مكان الميلاد:\s*([^|]+)/);
   const altMatch = str.match(/أسماء بديلة:\s*([^|]+)/);
-  const notesMatch = str.match(/ملاحظات:\s*([^|]+)/);
   const refMatch = str.match(/الرقم المرجعي:\s*([^|]+)/);
   const addrMatches = str.match(/العنوان:\s*([^|]+)/g);
+
+  // استخراج الملاحظات الكاملة: كل شيء بعد "ملاحظات:" حتى نهاية النص أو مفتاح معروف آخر
+  let notes: string | null = null;
+  const notesIdx = str.indexOf('ملاحظات:');
+  if (notesIdx !== -1) {
+    const afterNotes = str.slice(notesIdx + 'ملاحظات:'.length).trim();
+    const knownKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:'];
+    let endIdx = afterNotes.length;
+    for (const key of knownKeys) {
+      const idx1 = afterNotes.indexOf('| ' + key);
+      if (idx1 !== -1 && idx1 < endIdx) endIdx = idx1;
+      const idx2 = afterNotes.indexOf('|' + key);
+      if (idx2 !== -1 && idx2 < endIdx) endIdx = idx2;
+    }
+    notes = afterNotes.slice(0, endIdx).trim() || null;
+  }
+
   return {
     nationality: natMatch ? natMatch[1].trim() : null,
     dateOfBirth: dobMatch ? dobMatch[1].trim() : null,
     placeOfBirth: pobMatch ? pobMatch[1].trim() : null,
     alternativeNames: altMatch ? altMatch[1].split(',').map((n: string) => n.trim()).filter(Boolean) : [] as string[],
-    notes: notesMatch ? notesMatch[1].trim() : null,
+    notes,
     referenceNumber: refMatch ? refMatch[1].trim() : null,
     addresses: addrMatches ? addrMatches.map((a: string) => a.replace(/العنوان:\s*/, '').trim()) : [] as string[],
   };
@@ -514,19 +530,33 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       }
       y += 14;
     }
-
-    // ── NOTES ─────────────────────────────────────────────────────────────────
+    // ── NOTES ───────────────────────────────────────────────────────────────────────────
     if (mergedNotes) {
-      y = sectionHead(doc, "NOTES", X, y, W);
-      const noteLines = mergedNotes.match(/.{1,90}/g) || [mergedNotes];
-      const noteH = noteLines.length * 13 + 12;
+      y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
+      const noteSz = 8;
+      const noteW = W - 10;
+      const hasArNotes = /[\u0600-\u06FF]/.test(mergedNotes);
+      const arCharsN = (mergedNotes.match(/[\u0600-\u06FF]/g) || []).length;
+      const enLettersN = (mergedNotes.match(/[a-zA-Z]/g) || []).length;
+      const arDomN = hasArNotes && arCharsN > enLettersN;
+      // احسب عدد الأحرف في كل سطر (تقريبياً 7 أحرف لكل نقطة عرض)
+      const charsPerLine = Math.floor(noteW / (noteSz * 0.55));
+      const estimatedLines = Math.ceil(mergedNotes.length / charsPerLine) + 1;
+      const noteH = Math.max(estimatedLines * (noteSz + 4) + 12, 30);
       doc.save().rect(X, y, W, noteH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, noteH).stroke().restore();
-      renderValue(doc, mergedNotes, X + 5, y + 6, W - 10, 8, GRAY_MID);
+      // عرض النص مع التفاف السطور
+      if (arDomN) {
+        doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
+        (doc as any).text(mergedNotes, X + 5, y + 6, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+      } else {
+        doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
+        doc.text(mergedNotes, X + 5, y + 6, { align: "left", width: noteW, lineBreak: true });
+      }
       y += noteH + 14;
     }
 
-    // ── FOOTER — draw at absolute position at bottom of page ─────────────────
+    // -- FOOTER -- draw at absolute position at bottom of page --
     // CRITICAL: Set bottom margin to 0 BEFORE drawing footer.
     // This prevents PDFKit from auto-adding a new page when the cursor
     // goes below the original bottom margin boundary.

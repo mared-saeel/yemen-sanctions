@@ -54,8 +54,21 @@ function parseNotes(rawNotes: unknown) {
     result.alternativeNames = altMatch[1].split(",").map((n: string) => n.trim()).filter(Boolean);
   }
 
-  const notesMatch = str.match(/ملاحظات:\s*([^|]+)/);
-  if (notesMatch) result.notes = notesMatch[1].trim();
+  // استخراج الملاحظات: كل شيء بعد "ملاحظات:" حتى نهاية النص أو حتى مفتاح معروف آخر
+  const notesIdx = str.indexOf('ملاحظات:');
+  if (notesIdx !== -1) {
+    const afterNotes = str.slice(notesIdx + 'ملاحظات:'.length).trim();
+    // ابحث عن أول فاصل يسبقه مفتاح معروف
+    const knownKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:'];
+    let endIdx = afterNotes.length;
+    for (const key of knownKeys) {
+      const pipeKeyIdx = afterNotes.indexOf('| ' + key);
+      if (pipeKeyIdx !== -1 && pipeKeyIdx < endIdx) endIdx = pipeKeyIdx;
+      const pipeKeyIdx2 = afterNotes.indexOf('|' + key);
+      if (pipeKeyIdx2 !== -1 && pipeKeyIdx2 < endIdx) endIdx = pipeKeyIdx2;
+    }
+    result.notes = afterNotes.slice(0, endIdx).trim();
+  }
 
   const refMatch = str.match(/الرقم المرجعي:\s*([^|]+)/);
   if (refMatch) result.referenceNumber = refMatch[1].trim();
@@ -191,9 +204,9 @@ export async function handleImportSanctions(req: AuthedRequest, res: Response) {
         dateOfBirth: parsed.dateOfBirth?.substring(0, 50) ?? null,
         placeOfBirth: parsed.placeOfBirth?.substring(0, 512) ?? null,
         alternativeNames: parsed.alternativeNames || [],
-        notes: parsed.notes?.substring(0, 1000) ?? null,
+        notes: parsed.notes ?? null,
         referenceNumber: parsed.referenceNumber?.substring(0, 100) ?? null,
-        rawNotes: rawNotes ? String(rawNotes).substring(0, 5000) : null,
+        rawNotes: rawNotes ? String(rawNotes) : null,
       };
       record.searchIndex = buildSearchIndex(record);
       batch.push(record);
