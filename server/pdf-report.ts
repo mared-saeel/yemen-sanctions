@@ -51,6 +51,28 @@ function hr(doc: PDFKit.PDFDocument, y: number, x1: number, x2: number, color = 
   doc.save().strokeColor(color).lineWidth(lw).moveTo(x1, y).lineTo(x2, y).stroke().restore();
 }
 
+/** Parse rawNotes string into structured fields for PDF report */
+function parseRawNotesForPdf(raw: string | null | undefined) {
+  if (!raw) return { nationality: null as string | null, dateOfBirth: null as string | null, placeOfBirth: null as string | null, alternativeNames: [] as string[], notes: null as string | null, referenceNumber: null as string | null, addresses: [] as string[] };
+  const str = String(raw);
+  const natMatch = str.match(/الجنسية:\s*([^|]+)/);
+  const dobMatch = str.match(/تاريخ الميلاد:\s*([^|]+)/);
+  const pobMatch = str.match(/مكان الميلاد:\s*([^|]+)/);
+  const altMatch = str.match(/أسماء بديلة:\s*([^|]+)/);
+  const notesMatch = str.match(/ملاحظات:\s*([^|]+)/);
+  const refMatch = str.match(/الرقم المرجعي:\s*([^|]+)/);
+  const addrMatches = str.match(/العنوان:\s*([^|]+)/g);
+  return {
+    nationality: natMatch ? natMatch[1].trim() : null,
+    dateOfBirth: dobMatch ? dobMatch[1].trim() : null,
+    placeOfBirth: pobMatch ? pobMatch[1].trim() : null,
+    alternativeNames: altMatch ? altMatch[1].split(',').map((n: string) => n.trim()).filter(Boolean) : [] as string[],
+    notes: notesMatch ? notesMatch[1].trim() : null,
+    referenceNumber: refMatch ? refMatch[1].trim() : null,
+    addresses: addrMatches ? addrMatches.map((a: string) => a.replace(/العنوان:\s*/, '').trim()) : [] as string[],
+  };
+}
+
 /** Section heading — bold uppercase */
 function sectionHead(doc: PDFKit.PDFDocument, title: string, x: number, y: number, w: number): number {
   doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
@@ -413,6 +435,95 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         }
         y += 10;
       }
+    }
+
+    // ── ADDITIONAL INFORMATION (from rawNotes) ──────────────────────────────
+    const parsed = parseRawNotesForPdf(record.rawNotes);
+
+    // Merge parsed fields with DB fields
+    const mergedNationality = record.nationality || parsed.nationality;
+    const mergedDob = record.dateOfBirth || parsed.dateOfBirth;
+    const mergedPob = record.placeOfBirth || parsed.placeOfBirth;
+    const mergedRef = record.referenceNumber || parsed.referenceNumber;
+    const mergedNotes = record.notes || parsed.notes;
+    const dbAltArr = (record.alternativeNames as string[] | null) || [];
+    const allAltNames = Array.from(new Set([...dbAltArr, ...parsed.alternativeNames]));
+
+    // Update KEY DATA rows with merged values
+    // (already rendered above — add ADDITIONAL INFO section below)
+
+    // ── ADDITIONAL INFORMATION ────────────────────────────────────────────────
+    const addlRows: [string, string][] = [
+      ["Nationality / الجنسية", mergedNationality || "—"],
+      ["Date of Birth / تاريخ الميلاد", mergedDob || "—"],
+      ["Place of Birth / مكان الميلاد", mergedPob || "—"],
+      ["Reference Number / الرقم المرجعي", mergedRef || "—"],
+      ["Action Taken / الإجراء المتخذ", record.actionTaken || "—"],
+    ].filter(([, v]) => v && v !== "—") as [string, string][];
+
+    if (addlRows.length > 0) {
+      y = sectionHead(doc, "ADDITIONAL INFORMATION", X, y, W);
+      let shade2 = false;
+      for (const [label, value] of addlRows) {
+        y = tableRow(doc, label, value, X, y, LW, W, shade2, 8.5);
+        shade2 = !shade2;
+      }
+      y += 14;
+    }
+
+    // ── ALTERNATIVE NAMES (from rawNotes, merged) ─────────────────────────────
+    if (allAltNames.length > 0 && (!altNames || altNames.length === 0)) {
+      // Only show this section if ALIASES section above was empty
+      const cleanAll = allAltNames
+        .map(n => n.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, "").trim())
+        .filter(n => n.length > 0);
+      if (cleanAll.length > 0) {
+        y = sectionHead(doc, "ALIASES", X, y, W);
+        const aLW2 = W / 2;
+        doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, 16).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + 16).stroke().restore();
+        doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
+        enText(doc, "Aliases", X + 5, y + 4, aLW2 - 10);
+        enText(doc, "Native Character Names", X + aLW2 + 5, y + 4, aLW2 - 10);
+        y += 16;
+        const latinAll = cleanAll.filter(n => !isAr(n));
+        const arabicAll = cleanAll.filter(n => isAr(n));
+        const maxR2 = Math.max(latinAll.length, arabicAll.length, 1);
+        for (let i = 0; i < Math.min(maxR2, 10); i++) {
+          const rh = 18;
+          doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
+          doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rh).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + rh).stroke().restore();
+          if (latinAll[i]) { doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK); enText(doc, latinAll[i], X + 5, y + 5, aLW2 - 10); }
+          if (arabicAll[i]) { doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK); arText(doc, arabicAll[i], X + aLW2, y + 5, aLW2 - 5); }
+          y += rh;
+        }
+        y += 10;
+      }
+    }
+
+    // ── ADDRESSES ─────────────────────────────────────────────────────────────
+    if (parsed.addresses.length > 0) {
+      y = sectionHead(doc, `ADDRESSES (${parsed.addresses.length})`, X, y, W);
+      for (let i = 0; i < Math.min(parsed.addresses.length, 5); i++) {
+        const addr = parsed.addresses[i];
+        const addrH = 22;
+        doc.save().rect(X, y, W, addrH).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, addrH).stroke().restore();
+        renderValue(doc, addr, X + 5, y + 6, W - 10, 8, BLACK);
+        y += addrH;
+      }
+      y += 14;
+    }
+
+    // ── NOTES ─────────────────────────────────────────────────────────────────
+    if (mergedNotes) {
+      y = sectionHead(doc, "NOTES", X, y, W);
+      const noteLines = mergedNotes.match(/.{1,90}/g) || [mergedNotes];
+      const noteH = noteLines.length * 13 + 12;
+      doc.save().rect(X, y, W, noteH).fill(GRAY_ROW).restore();
+      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, noteH).stroke().restore();
+      renderValue(doc, mergedNotes, X + 5, y + 6, W - 10, 8, GRAY_MID);
+      y += noteH + 14;
     }
 
     // ── FOOTER — draw at absolute position at bottom of page ─────────────────
