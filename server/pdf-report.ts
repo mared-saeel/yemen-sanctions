@@ -10,12 +10,13 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
+// bidi-js removed — PDFKit with NotoSansArabic handles Arabic natively when text is passed directly
 
 const __filename = fileURLToPath(import.meta.url);
 const __dir = path.dirname(__filename);
 const FONTS_DIR = path.join(__dir, "fonts");
-const FONT_AR   = path.join(FONTS_DIR, "Scheherazade-Regular.ttf");
-const FONT_AR_B = path.join(FONTS_DIR, "Scheherazade-Bold.ttf");
+const FONT_AR   = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
+const FONT_AR_B = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
 const FONT_EN   = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
 const FONT_EN_B = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
 const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
@@ -35,10 +36,74 @@ const BORDER    = "#C8CDD8";
 
 function isAr(t: string) { return /[\u0600-\u06FF]/.test(t); }
 
-/** Draw Arabic text right-aligned */
+/**
+ * Draw Arabic text right-aligned.
+ * PDFKit + NotoSansArabic handles Arabic shaping natively — no BiDi reordering needed.
+ * Just pass the text directly with align:right and Arabic OpenType features.
+ */
 function arText(doc: PDFKit.PDFDocument, t: string, x: number, y: number, w: number, opts: PDFKit.Mixins.TextOptions = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (doc as any).text(t, x, y, { align: "right", features: AR_FEAT, width: w, lineBreak: false, ...opts });
+}
+
+/**
+ * Render mixed Arabic+English text by splitting into word-groups and rendering each
+ * group with the appropriate font. Groups are reversed for RTL visual order.
+ * Arabic words use FONT_AR, English/numeric words use FONT_EN.
+ */
+function renderMixedRTL(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number, y: number, w: number,
+  sz: number,
+  color = BLACK
+): void {
+  // Split text into words, group consecutive Arabic/non-Arabic words
+  const words = text.split(/(\s+)/);
+  const groups: { text: string; isAr: boolean }[] = [];
+  let cur: { text: string; isAr: boolean } | null = null;
+
+  for (const word of words) {
+    if (!word) continue;
+    const isSpace = /^\s+$/.test(word);
+    if (isSpace) { if (cur) cur.text += " "; continue; }
+    const wordIsAr = /[\u0600-\u06FF]/.test(word);
+    if (!cur) {
+      cur = { text: word, isAr: wordIsAr };
+    } else if (wordIsAr === cur.isAr) {
+      cur.text += " " + word;
+    } else {
+      groups.push(cur);
+      cur = { text: word, isAr: wordIsAr };
+    }
+  }
+  if (cur && cur.text.trim()) groups.push(cur);
+
+  // Reverse groups for RTL visual order
+  groups.reverse();
+
+  // Measure widths
+  const widths: number[] = [];
+  for (const g of groups) {
+    doc.font(g.isAr ? FONT_AR : FONT_EN).fontSize(sz);
+    widths.push(doc.widthOfString(g.text.trim()) + 6);
+  }
+
+  // Render right-to-left
+  let curX = x + w;
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    const gW = widths[i];
+    curX -= gW;
+    if (g.isAr) {
+      doc.font(FONT_AR).fontSize(sz).fillColor(color);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc as any).text(g.text.trim(), curX, y, { align: "right", features: AR_FEAT, width: gW, lineBreak: false });
+    } else {
+      doc.font(FONT_EN).fontSize(sz).fillColor(color);
+      doc.text(g.text.trim(), curX, y, { align: "left", width: gW, lineBreak: false });
+    }
+  }
 }
 
 /** Draw English text left-aligned */
@@ -119,26 +184,14 @@ function renderValue(
   const arDominant = hasAr && arChars > enLetters;
 
   if (arDominant) {
-    // Arabic-dominant text (may contain numbers/punctuation): render as Arabic
+    // Arabic-dominant text: render directly with Arabic font (no BiDi needed)
     doc.font(FONT_AR).fontSize(sz).fillColor(color);
     arText(doc, text, x, y, w);
     return y + sz + 2;
   } else if (hasAr && !arDominant) {
-    // True mixed: English letters dominate, show English part then Arabic part
-    const enPart = text.replace(/[\u0600-\u06FF\u0750-\u077F]/g, "").replace(/\s+/g, " ").trim();
-    const arPart = text.replace(/[^\u0600-\u06FF\u0750-\u077F\s]/g, "").trim();
-    let cy = y;
-    if (enPart) {
-      doc.font(FONT_EN).fontSize(sz).fillColor(color);
-      enText(doc, enPart, x, cy, w);
-      cy += sz + 3;
-    }
-    if (arPart) {
-      doc.font(FONT_AR).fontSize(sz).fillColor(color);
-      arText(doc, arPart, x, cy, w);
-      cy += sz + 3;
-    }
-    return cy;
+    // True mixed Arabic+English: split into word-groups and render each with correct font
+    renderMixedRTL(doc, text, x, y, w, sz, color);
+    return y + sz + 2;
   } else {
     doc.font(FONT_EN).fontSize(sz).fillColor(color);
     enText(doc, text, x, y, w);
@@ -176,9 +229,32 @@ function tableRow(
     .moveTo(x + labelW, y).lineTo(x + labelW, y + rh).stroke()
     .restore();
 
-  // Label — English only, bold, small
-  doc.font(FONT_EN_B).fontSize(sz - 1).fillColor(BLACK);
-  enText(doc, label, x + 5, y + (rh / 2) - (effectiveSz / 2), labelW - 10);
+  // Label — may be mixed Arabic/English (e.g. "Nationality / الجنسية")
+  const labelHasAr = /[\u0600-\u06FF]/.test(label);
+  if (labelHasAr) {
+    // Mixed label: split into EN part and AR part, render on two lines
+    const slashIdx = label.indexOf(" / ");
+    const enPart = slashIdx >= 0 ? label.slice(0, slashIdx).trim() : label;
+    const arPart = slashIdx >= 0 ? label.slice(slashIdx + 3).trim() : "";
+    const lineH = effectiveSz + 2;
+    const totalLabelH = arPart ? lineH * 2 + 2 : lineH;
+    const labelY = y + (rh - totalLabelH) / 2;
+    // EN part
+    doc.font(FONT_EN_B).fontSize(sz - 1).fillColor(BLACK);
+    enText(doc, enPart, x + 5, labelY, labelW - 10);
+    // AR part
+    if (arPart) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc as any).text(arPart, x + 5, labelY + lineH + 2, { align: "right", features: AR_FEAT, width: labelW - 10, lineBreak: false,
+        font: FONT_AR_B, fontSize: sz - 1, fillColor: BLACK });
+      doc.font(FONT_AR_B).fontSize(sz - 1).fillColor(BLACK);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc as any).text(arPart, x + 5, labelY + lineH + 2, { align: "right", features: AR_FEAT, width: labelW - 10, lineBreak: false });
+    }
+  } else {
+    doc.font(FONT_EN_B).fontSize(sz - 1).fillColor(BLACK);
+    enText(doc, label, x + 5, y + (rh / 2) - (effectiveSz / 2), labelW - 10);
+  }
 
   // Value
   renderValue(doc, value || "—", x + labelW + 5, y + (rh / 2) - (effectiveSz / 2), valW - 10, sz, BLACK);
@@ -470,17 +546,27 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- ADDITIONAL INFORMATION ------------------------------------------------
     const addlRows: [string, string][] = [
-      ["Nationality / الجنسية", mergedNationality || "—"],
-      ["Date of Birth / تاريخ الميلاد", mergedDob || "—"],
-      ["Place of Birth / مكان الميلاد", mergedPob || "—"],
-      ["Reference Number / الرقم المرجعي", mergedRef || "—"],
-      ["Action Taken / الإجراء المتخذ", record.actionTaken || "—"],
+      ["Nationality", mergedNationality || "—"],
+      ["Date of Birth", mergedDob || "—"],
+      ["Place of Birth", mergedPob || "—"],
+      ["Reference Number", mergedRef || "—"],
+      ["Action Taken", record.actionTaken || "—"],
     ].filter(([, v]) => v && v !== "—") as [string, string][];
 
     if (addlRows.length > 0) {
       y = sectionHead(doc, "ADDITIONAL INFORMATION", X, y, W);
       let shade2 = false;
       for (const [label, value] of addlRows) {
+        // Check if row will overflow the page
+        const hasArVal = /[\u0600-\u06FF]/.test(value);
+        const arCharsVal = (value.match(/[\u0600-\u06FF]/g) || []).length;
+        const enLettersVal = (value.match(/[a-zA-Z]/g) || []).length;
+        const mixedVal = hasArVal && !(hasArVal && arCharsVal > enLettersVal);
+        const rowH = (mixedVal ? 2 : 1) * (8.5 + 4) + 10;
+        if (y + rowH > PH - 80) {
+          doc.addPage();
+          y = 40;
+        }
         y = tableRow(doc, label, value, X, y, LW, W, shade2, 8.5);
         shade2 = !shade2;
       }
