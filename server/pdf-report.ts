@@ -219,7 +219,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const W  = PW - 90;          // 505.28
     let y = 40;
 
-    // ── HEADER ─────────────────────────────────────────────────────────────────
+    // -- HEADER -----------------------------------------------------------------
     doc.font(FONT_EN_B).fontSize(16).fillColor(BLUE);
     enText(doc, "Yemen", X, y, 110);
     doc.font(FONT_EN_B).fontSize(16).fillColor(NAVY);
@@ -238,7 +238,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     hr(doc, y, X, X + W, BLACK, 0.8);
     y += 10;
 
-    // ── RECORD UID ────────────────────────────────────────────────────────────
+    // -- RECORD UID ------------------------------------------------------------
     const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
     doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
     enText(doc, "WORLD-CHECK RECORD UID:", X, y, 175);
@@ -249,7 +249,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     hr(doc, y, X, X + W, BORDER, 0.4);
     y += 8;
 
-    // ── META TABLE ────────────────────────────────────────────────────────────
+    // -- META TABLE ------------------------------------------------------------
     const now      = new Date();
     const dateStr  = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     const timeStr  = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -290,7 +290,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     y += mH + 16;
 
-    // ── CASE AND COMPARISON DATA ──────────────────────────────────────────────
+    // -- CASE AND COMPARISON DATA ----------------------------------------------
     y = sectionHead(doc, "CASE AND COMPARISON DATA", X, y, W);
 
     const c1 = 70;
@@ -352,7 +352,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     }
     y += nRH + 14;
 
-    // ── KEY DATA ──────────────────────────────────────────────────────────────
+    // -- KEY DATA --------------------------------------------------------------
     y = sectionHead(doc, "KEY DATA", X, y, W);
 
     const LW = 130;
@@ -382,7 +382,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     y += 14;
 
-    // ── LISTING REASON ────────────────────────────────────────────────────────
+    // -- LISTING REASON --------------------------------------------------------
     if (record.listingReason) {
       y = sectionHead(doc, "LISTING REASON", X, y, W);
       const lrText = record.listingReason;
@@ -396,7 +396,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       y += lrH + 14;
     }
 
-    // ── LEGAL BASIS ───────────────────────────────────────────────────────────
+    // -- LEGAL BASIS -----------------------------------------------------------
     if (record.legalBasis) {
       y = sectionHead(doc, "LEGAL BASIS", X, y, W);
       const lbH = 24;
@@ -406,7 +406,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       y += lbH + 14;
     }
 
-    // ── ALIASES ───────────────────────────────────────────────────────────────
+    // -- ALIASES ---------------------------------------------------------------
     const altNames = record.alternativeNames as string[] | null;
     if (altNames && altNames.length > 0) {
       const clean = altNames
@@ -431,7 +431,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         const arabicNames = clean.filter(n => isAr(n));
         const maxR = Math.max(latinNames.length, arabicNames.length, 1);
 
-        for (let i = 0; i < Math.min(maxR, 8); i++) {
+        for (let i = 0; i < maxR; i++) {
           const rh = 18;
           doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
           doc.save().strokeColor(BORDER).lineWidth(0.3)
@@ -453,7 +453,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       }
     }
 
-    // ── ADDITIONAL INFORMATION (from rawNotes) ──────────────────────────────
+    // -- ADDITIONAL INFORMATION (from rawNotes) ------------------------------
     const parsed = parseRawNotesForPdf(record.rawNotes);
 
     // Merge parsed fields with DB fields
@@ -468,7 +468,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     // Update KEY DATA rows with merged values
     // (already rendered above — add ADDITIONAL INFO section below)
 
-    // ── ADDITIONAL INFORMATION ────────────────────────────────────────────────
+    // -- ADDITIONAL INFORMATION ------------------------------------------------
     const addlRows: [string, string][] = [
       ["Nationality / الجنسية", mergedNationality || "—"],
       ["Date of Birth / تاريخ الميلاد", mergedDob || "—"],
@@ -487,7 +487,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       y += 14;
     }
 
-    // ── ALTERNATIVE NAMES (from rawNotes, merged) ─────────────────────────────
+    // -- ALTERNATIVE NAMES (from rawNotes, merged) -----------------------------
     if (allAltNames.length > 0 && (!altNames || altNames.length === 0)) {
       // Only show this section if ALIASES section above was empty
       const cleanAll = allAltNames
@@ -505,7 +505,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         const latinAll = cleanAll.filter(n => !isAr(n));
         const arabicAll = cleanAll.filter(n => isAr(n));
         const maxR2 = Math.max(latinAll.length, arabicAll.length, 1);
-        for (let i = 0; i < Math.min(maxR2, 10); i++) {
+        for (let i = 0; i < maxR2; i++) {
           const rh = 18;
           doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
           doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rh).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + rh).stroke().restore();
@@ -517,10 +517,10 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       }
     }
 
-    // ── ADDRESSES ─────────────────────────────────────────────────────────────
+    // -- ADDRESSES -------------------------------------------------------------
     if (parsed.addresses.length > 0) {
       y = sectionHead(doc, `ADDRESSES (${parsed.addresses.length})`, X, y, W);
-      for (let i = 0; i < Math.min(parsed.addresses.length, 5); i++) {
+      for (let i = 0; i < parsed.addresses.length; i++) {
         const addr = parsed.addresses[i];
         const addrH = 22;
         doc.save().rect(X, y, W, addrH).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
@@ -530,7 +530,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       }
       y += 14;
     }
-    // ── NOTES ───────────────────────────────────────────────────────────────────────────
+    // -- NOTES ---------------------------------------------------------------------------
     if (mergedNotes) {
       y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
       const noteSz = 8;
@@ -539,19 +539,26 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       const arCharsN = (mergedNotes.match(/[\u0600-\u06FF]/g) || []).length;
       const enLettersN = (mergedNotes.match(/[a-zA-Z]/g) || []).length;
       const arDomN = hasArNotes && arCharsN > enLettersN;
-      // احسب عدد الأحرف في كل سطر (تقريبياً 7 أحرف لكل نقطة عرض)
-      const charsPerLine = Math.floor(noteW / (noteSz * 0.55));
-      const estimatedLines = Math.ceil(mergedNotes.length / charsPerLine) + 1;
-      const noteH = Math.max(estimatedLines * (noteSz + 4) + 12, 30);
+      // احسب ارتفاع النص مسبقاً باستخدام heightOfString
+      let noteTextH: number;
+      if (arDomN) {
+        doc.font(FONT_AR).fontSize(noteSz);
+        noteTextH = (doc as any).heightOfString(mergedNotes, { align: "right", features: AR_FEAT, width: noteW });
+      } else {
+        doc.font(FONT_EN).fontSize(noteSz);
+        noteTextH = doc.heightOfString(mergedNotes, { align: "left", width: noteW });
+      }
+      const noteH = noteTextH + 16;
+      // ارسم الخلفية والحدود
       doc.save().rect(X, y, W, noteH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, noteH).stroke().restore();
-      // عرض النص مع التفاف السطور
+      // ارسم النص
       if (arDomN) {
         doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-        (doc as any).text(mergedNotes, X + 5, y + 6, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+        (doc as any).text(mergedNotes, X + 5, y + 8, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
       } else {
         doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
-        doc.text(mergedNotes, X + 5, y + 6, { align: "left", width: noteW, lineBreak: true });
+        doc.text(mergedNotes, X + 5, y + 8, { align: "left", width: noteW, lineBreak: true });
       }
       y += noteH + 14;
     }
