@@ -11,7 +11,7 @@
  */
 import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
-import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne } from "./search-engine";
+import { searchSanctions } from "./search-engine";
 import { createContext } from "./_core/context";
 import { createAuditLog } from "./db";
 
@@ -127,59 +127,56 @@ async function processJobInBackground(
   try {
     job.status = "processing";
 
-    // Load all DB records ONCE
-    const allRecords = await loadAllRecordsForBatch();
-    const fuseIndex = buildBatchFuseIndex(allRecords);
-
     const results: BatchRow[] = [];
-    const CHUNK_SIZE = 20; // process in chunks to allow progress updates
 
-    for (let i = 0; i < names.length; i += CHUNK_SIZE) {
-      const chunk = names.slice(i, i + CHUNK_SIZE);
+    // Process each name individually using DB-backed search (non-blocking)
+    for (let i = 0; i < names.length; i++) {
+      const { row, name } = names[i];
 
-      for (const { row, name } of chunk) {
-        const candidates = batchSearchOne(name, allRecords, fuseIndex, 0.60, 3);
+      // Use the same search engine as single-name search — DB queries, no in-memory Fuse
+      const { results: candidates } = await searchSanctions({
+        query: name,
+        limit: 3,
+        threshold: 0.55,
+      });
 
-        let status: BatchRow["status"] = "NO_MATCH";
-        let chosenTop = candidates[0] ?? null;
+      let status: BatchRow["status"] = "NO_MATCH";
+      let chosenTop = candidates[0] ?? null;
 
-        for (const candidate of candidates) {
-          const candidateName = candidate.nameEn || candidate.nameAr || "";
-          const overlap = wordOverlapScore(name, candidateName);
-          const overlapAr = candidate.nameAr ? wordOverlapScore(name, candidate.nameAr) : 0;
-          const bestOverlap = Math.max(overlap, overlapAr);
-          const score = candidate.matchScore;
+      for (const candidate of candidates) {
+        const candidateName = candidate.nameEn || candidate.nameAr || "";
+        const overlap = wordOverlapScore(name, candidateName);
+        const overlapAr = candidate.nameAr ? wordOverlapScore(name, candidate.nameAr) : 0;
+        const bestOverlap = Math.max(overlap, overlapAr);
+        const score = candidate.matchScore;
 
-          if (score >= 90 && bestOverlap >= 0.40) {
-            status = "MATCH";
-            chosenTop = candidate;
-            break;
-          } else if (score >= 70 && bestOverlap >= 0.35) {
-            status = "POSSIBLE_MATCH";
-            chosenTop = candidate;
-          }
+        if (score >= 90 && bestOverlap >= 0.40) {
+          status = "MATCH";
+          chosenTop = candidate;
+          break;
+        } else if (score >= 70 && bestOverlap >= 0.35) {
+          status = "POSSIBLE_MATCH";
+          chosenTop = candidate;
         }
-
-        results.push({
-          rowNumber: row,
-          submittedName: name,
-          status,
-          matchScore: chosenTop ? chosenTop.matchScore : 0,
-          matchedName: chosenTop?.nameEn ?? null,
-          matchedNameAr: chosenTop?.nameAr ?? null,
-          entityType: chosenTop?.entityType ?? null,
-          issuingBody: chosenTop?.issuingBody ?? null,
-          listingDate: chosenTop?.listingDate ?? null,
-          recordId: chosenTop?.id ?? null,
-        });
       }
 
-      // Update progress after each chunk
-      job.processed = Math.min(i + CHUNK_SIZE, names.length);
-      job.progress = Math.round((job.processed / job.total) * 100);
+      results.push({
+        rowNumber: row,
+        submittedName: name,
+        status,
+        matchScore: chosenTop ? chosenTop.matchScore : 0,
+        matchedName: chosenTop?.nameEn ?? null,
+        matchedNameAr: chosenTop?.nameAr ?? null,
+        entityType: chosenTop?.entityType ?? null,
+        issuingBody: chosenTop?.issuingBody ?? null,
+        listingDate: chosenTop?.listingDate ?? null,
+        recordId: chosenTop?.id ?? null,
+      });
 
-      // Yield to event loop between chunks to prevent blocking
-      await new Promise(resolve => setImmediate(resolve));
+      // Update progress after each name
+      job.processed = i + 1;
+      job.progress = Math.round(((i + 1) / job.total) * 100);
+      // No explicit yield needed — await searchSanctions already yields to event loop
     }
 
     job.results = results;
@@ -221,13 +218,9 @@ export async function handleBatchScreen(req: Request, res: Response) {
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-    // Parse Excel
+    // Parse Excel — pass Buffer directly (ExcelJS accepts Node.js Buffer)
     const workbook = new ExcelJS.Workbook();
-    const arrayBuffer = file.buffer.buffer.slice(
-      file.buffer.byteOffset,
-      file.buffer.byteOffset + file.buffer.byteLength
-    );
-    await workbook.xlsx.load(arrayBuffer as ArrayBuffer);
+    await workbook.xlsx.load(file.buffer as unknown as ArrayBuffer);
     const worksheet = workbook.worksheets[0];
     if (!worksheet) return res.status(400).json({ error: "Empty workbook" });
 
