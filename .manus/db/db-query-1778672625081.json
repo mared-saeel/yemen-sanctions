@@ -1,0 +1,26 @@
+{
+  "query": "SELECT COUNT(*) as count, nameEn FROM sanctions_records WHERE nameEn LIKE '%BARASH%' GROUP BY nameEn LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT COUNT(*) as count, nameEn FROM sanctions_records WHERE nameEn LIKE '%BARASH%' GROUP BY nameEn LIMIT 20;",
+  "rows": [
+    {
+      "count": "1",
+      "nameEn": "AL-BARASHA MOHAMAD"
+    },
+    {
+      "count": "1",
+      "nameEn": "AL-BARASHA MOHAMAD FAYEZ"
+    },
+    {
+      "count": "1",
+      "nameEn": "AL-BARASHA MOHAMMAD"
+    },
+    {
+      "count": "2",
+      "nameEn": "BARASH AVIATION AND CARGO COMPANY LIMITED"
+    }
+  ],
+  "messages": [],
+  "stdout": "count\tnameEn\n1\tAL-BARASHA MOHAMAD\n1\tAL-BARASHA MOHAMAD FAYEZ\n1\tAL-BARASHA MOHAMMAD\n2\tBARASH AVIATION AND CARGO COMPANY LIMITED\n",
+  "stderr": "",
+  "execution_time_ms": 680
+}

@@ -258,11 +258,25 @@ function scoreRecord(
     return { score: 0.98, matchType: "exact" };
   }
 
-  // 2. Contains match
-  if (nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery)) {
+  // 2. Contains match (bidirectional: query in name OR name in query)
+  // This handles both "BARASH AVIATION" matching "BARASH AVIATION AND CARGO COMPANY LIMITED"
+  // AND "BARASH AVIATION AND CARGO COMPANY LIMITED" matching itself
+  const queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery);
+  const nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn);
+  
+  if (queryInName || nameInQuery) {
+    // If it's a bidirectional match (name contains query AND query contains name = exact match)
+    if (queryInName && nameInQuery) {
+      return { score: 0.98, matchType: "exact" };
+    }
+    // If query is in name, give high score
     return { score: 0.92, matchType: "exact" };
   }
-  if (nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery))) {
+  
+  const altQueryInName = nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery));
+  const altNameInQuery = nAltNames.some((n) => nQuery.includes(n)) || rawAltNames.some((n) => rawQuery.includes(n));
+  
+  if (altQueryInName || altNameInQuery) {
     return { score: 0.88, matchType: "exact" };
   }
 
@@ -378,52 +392,71 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   }
 
   // Step 1: Fast DB pre-filter using LIKE for candidate retrieval
-  // Use both normalized query tokens AND original query tokens to maximize recall
-  const nSearchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
-  // Also use original (non-normalized) terms for English queries
-  const rawTerms = trimmedQuery
-    .toLowerCase()
-    .split(/[\s.,;:!?()\[\]{}'"]+ /)
-    .filter((t) => t.length >= 2);
-  // Transliteration terms: if Arabic query, convert to Latin and split
-  const transTerms = isArabic(trimmedQuery)
-    ? arabicToLatin(trimmedQuery).split(/\s+/).filter((t) => t.length >= 2)
-    : [];
-  // Combine all sets, deduplicate
-  const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
-
-  // Filter out stop words but keep all meaningful tokens
-  const stopWords = new Set(['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el']);
-  const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !stopWords.has(t));
-  const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
-
-  // Each token is searched independently with OR — ensures we find records even if word order differs
-  const likeConditions = termsToSearch.flatMap((term) => [
-    like(sanctionsRecords.nameEn, `%${term}%`),
-    like(sanctionsRecords.nameAr, `%${term}%`),
-    like(sanctionsRecords.searchIndex, `%${term}%`),
-  ]);
-
-  // Also add a full-phrase LIKE for the original query (handles exact company names)
+  // Two-phase approach: First try full-phrase match, then fall back to token-based search
+  
+  const nQuery_lower = nQuery.toLowerCase();
+  const rawQuery_lower = trimmedQuery.toLowerCase();
+  
+  // Phase 1: Try full-phrase match first (highest priority)
   const fullPhraseLike = [
     like(sanctionsRecords.nameEn, `%${trimmedQuery}%`),
     like(sanctionsRecords.nameAr, `%${trimmedQuery}%`),
     like(sanctionsRecords.searchIndex, `%${trimmedQuery}%`),
   ];
-
-  const allLikeConditions = [...likeConditions, ...fullPhraseLike];
-
-  const whereClause =
+  
+  const fullPhraseWhere =
     conditions.length > 0
-      ? and(...conditions, or(...allLikeConditions))
-      : or(...allLikeConditions);
-
-  // Fetch candidates (max 2000 for scoring)
-  const candidates = await db
+      ? and(...conditions, or(...fullPhraseLike))
+      : or(...fullPhraseLike);
+  
+  // Try full-phrase search first
+  let candidates = await db
     .select()
     .from(sanctionsRecords)
-    .where(whereClause)
+    .where(fullPhraseWhere)
     .limit(2000);
+  
+  // Phase 2: If no results from full-phrase, fall back to token-based search
+  if (candidates.length === 0) {
+    const nSearchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
+    // Also use original (non-normalized) terms for English queries
+    const rawTerms = trimmedQuery
+      .toLowerCase()
+      .split(/[\s.,;:!?()[\]{}'"-]+/)
+      .filter((t) => t.length >= 2);
+    // Transliteration terms: if Arabic query, convert to Latin and split
+    const transTerms = isArabic(trimmedQuery)
+      ? arabicToLatin(trimmedQuery).split(/\s+/).filter((t) => t.length >= 2)
+      : [];
+    // Combine all sets, deduplicate
+    const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
+
+    // Filter out stop words but keep all meaningful tokens
+    const stopWords = new Set(['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el']);
+    const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !stopWords.has(t));
+    const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
+
+    // Each token is searched independently with OR — ensures we find records even if word order differs
+    const likeConditions = termsToSearch.flatMap((term) => [
+      like(sanctionsRecords.nameEn, `%${term}%`),
+      like(sanctionsRecords.nameAr, `%${term}%`),
+      like(sanctionsRecords.searchIndex, `%${term}%`),
+    ]);
+
+    const allLikeConditions = [...likeConditions, ...fullPhraseLike];
+
+    const whereClause =
+      conditions.length > 0
+        ? and(...conditions, or(...allLikeConditions))
+        : or(...allLikeConditions);
+
+    // Fetch candidates (max 2000 for scoring)
+    candidates = await db
+      .select()
+      .from(sanctionsRecords)
+      .where(whereClause)
+      .limit(2000);
+  }
 
   // Step 2: Score candidates using fuzzy matching
   const scored: SearchResult[] = [];
