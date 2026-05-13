@@ -128,7 +128,7 @@ async function processJobInBackground(
     job.status = "processing";
 
     const results: BatchRow[] = [];
-    const PARALLEL_BATCH_SIZE = 10; // Process 10 names in parallel
+    const PARALLEL_BATCH_SIZE = 3; // Reduced from 10 to avoid overwhelming database
 
     // Process names in parallel batches for better performance
     for (let i = 0; i < names.length; i += PARALLEL_BATCH_SIZE) {
@@ -201,6 +201,11 @@ async function processJobInBackground(
       // Update progress after each batch
       job.processed = Math.min(i + PARALLEL_BATCH_SIZE, names.length);
       job.progress = Math.round((job.processed / job.total) * 100);
+
+      // Add delay between batches to prevent database overload (but not after the last batch)
+      if (i + PARALLEL_BATCH_SIZE < names.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
 
     job.results = results;
@@ -263,8 +268,8 @@ export async function handleBatchScreen(req: Request, res: Response) {
       return res.status(400).json({ error: "No names found in the first column" });
     }
 
-    if (names.length > 500) {
-      return res.status(400).json({ error: "Maximum 500 names per batch. Please split your file." });
+    if (names.length > 100) {
+      return res.status(400).json({ error: "Maximum 100 names per batch. Please split your file." });
     }
 
     // Create job
