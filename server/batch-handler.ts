@@ -128,55 +128,79 @@ async function processJobInBackground(
     job.status = "processing";
 
     const results: BatchRow[] = [];
+    const PARALLEL_BATCH_SIZE = 10; // Process 10 names in parallel
 
-    // Process each name individually using DB-backed search (non-blocking)
-    for (let i = 0; i < names.length; i++) {
-      const { row, name } = names[i];
+    // Process names in parallel batches for better performance
+    for (let i = 0; i < names.length; i += PARALLEL_BATCH_SIZE) {
+      const batch = names.slice(i, i + PARALLEL_BATCH_SIZE);
 
-      // Use the same search engine as single-name search — DB queries, no in-memory Fuse
-      const { results: candidates } = await searchSanctions({
-        query: name,
-        limit: 3,
-        threshold: 0.55,
-      });
+      // Process all names in this batch in parallel
+      const batchResults = await Promise.all(
+        batch.map(async ({ row, name }) => {
+          try {
+            // Use the same search engine as single-name search — DB queries, no in-memory Fuse
+            const { results: candidates } = await searchSanctions({
+              query: name,
+              limit: 3,
+              threshold: 0.55,
+            });
 
-      let status: BatchRow["status"] = "NO_MATCH";
-      let chosenTop = candidates[0] ?? null;
+            let status: BatchRow["status"] = "NO_MATCH";
+            let chosenTop = candidates[0] ?? null;
 
-      for (const candidate of candidates) {
-        const candidateName = candidate.nameEn || candidate.nameAr || "";
-        const overlap = wordOverlapScore(name, candidateName);
-        const overlapAr = candidate.nameAr ? wordOverlapScore(name, candidate.nameAr) : 0;
-        const bestOverlap = Math.max(overlap, overlapAr);
-        const score = candidate.matchScore;
+            for (const candidate of candidates) {
+              const candidateName = candidate.nameEn || candidate.nameAr || "";
+              const overlap = wordOverlapScore(name, candidateName);
+              const overlapAr = candidate.nameAr ? wordOverlapScore(name, candidate.nameAr) : 0;
+              const bestOverlap = Math.max(overlap, overlapAr);
+              const score = candidate.matchScore;
 
-        if (score >= 90 && bestOverlap >= 0.40) {
-          status = "MATCH";
-          chosenTop = candidate;
-          break;
-        } else if (score >= 70 && bestOverlap >= 0.35) {
-          status = "POSSIBLE_MATCH";
-          chosenTop = candidate;
-        }
-      }
+              if (score >= 90 && bestOverlap >= 0.40) {
+                status = "MATCH";
+                chosenTop = candidate;
+                break;
+              } else if (score >= 70 && bestOverlap >= 0.35) {
+                status = "POSSIBLE_MATCH";
+                chosenTop = candidate;
+              }
+            }
 
-      results.push({
-        rowNumber: row,
-        submittedName: name,
-        status,
-        matchScore: chosenTop ? chosenTop.matchScore : 0,
-        matchedName: chosenTop?.nameEn ?? null,
-        matchedNameAr: chosenTop?.nameAr ?? null,
-        entityType: chosenTop?.entityType ?? null,
-        issuingBody: chosenTop?.issuingBody ?? null,
-        listingDate: chosenTop?.listingDate ?? null,
-        recordId: chosenTop?.id ?? null,
-      });
+            return {
+              rowNumber: row,
+              submittedName: name,
+              status,
+              matchScore: chosenTop ? chosenTop.matchScore : 0,
+              matchedName: chosenTop?.nameEn ?? null,
+              matchedNameAr: chosenTop?.nameAr ?? null,
+              entityType: chosenTop?.entityType ?? null,
+              issuingBody: chosenTop?.issuingBody ?? null,
+              listingDate: chosenTop?.listingDate ?? null,
+              recordId: chosenTop?.id ?? null,
+            };
+          } catch (err) {
+            console.error(`[batch-job] Error processing name: ${name}`, err);
+            return {
+              rowNumber: row,
+              submittedName: name,
+              status: "NO_MATCH" as const,
+              matchScore: 0,
+              matchedName: null,
+              matchedNameAr: null,
+              entityType: null,
+              issuingBody: null,
+              listingDate: null,
+              recordId: null,
+            };
+          }
+        })
+      );
 
-      // Update progress after each name
-      job.processed = i + 1;
-      job.progress = Math.round(((i + 1) / job.total) * 100);
-      // No explicit yield needed — await searchSanctions already yields to event loop
+      // Add batch results to main results array
+      results.push(...batchResults);
+
+      // Update progress after each batch
+      job.processed = Math.min(i + PARALLEL_BATCH_SIZE, names.length);
+      job.progress = Math.round((job.processed / job.total) * 100);
     }
 
     job.results = results;
@@ -239,8 +263,8 @@ export async function handleBatchScreen(req: Request, res: Response) {
       return res.status(400).json({ error: "No names found in the first column" });
     }
 
-    if (names.length > 1000) {
-      return res.status(400).json({ error: "Maximum 1000 names per batch. Please split your file." });
+    if (names.length > 500) {
+      return res.status(400).json({ error: "Maximum 500 names per batch. Please split your file." });
     }
 
     // Create job
