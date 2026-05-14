@@ -211,3 +211,8 @@ Detected
 ## Phase 26: إصلاح مشاكل اللغة العربية في تقرير PDF
 - [ ] إصلاح النص العربي المقلوب في LISTING REASON
 - [ ] إصلاح مشكلة المربعات في Action Taken (النص العربي لا يظهر)
+
+## Phase 27: تحسين البحث - تجاوز الرموز والنقاط
+- [x] إضافة دالة normalizeSearchText لتجاوز النقاط والرموز والفواصل
+- [x] تطبيق التطبيع على query و database records
+- [x] اختبار البحث عن "HUTHELE, Nasr Mohsen Ali" والتأكد من المطابقة (✅ 100% Exact match)

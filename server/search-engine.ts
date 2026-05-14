@@ -144,6 +144,20 @@ function normalizeEnglish(text: string): string {
     .trim();
 }
 
+/**
+ * Normalize search text by removing punctuation, symbols, and special characters.
+ * This allows "HUTHELE, Nasr Mohsen Ali" to match "HUTHELE Nasr Mohsen Ali"
+ * Removes: dots, commas, hyphens, parentheses, quotes, etc.
+ * Keeps: letters, numbers, and spaces
+ */
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0600-\u06FF\s]/g, "") // Remove all punctuation/symbols, keep Arabic/English/numbers/spaces
+    .replace(/\s+/g, " ") // Collapse multiple spaces
+    .trim();
+}
+
 function normalize(text: string): string {
   // Detect if Arabic
   const arabicPattern = /[\u0600-\u06FF]/;
@@ -239,30 +253,33 @@ function scoreRecord(
 ): { score: number; matchType: SearchResult["matchType"] } {
   const nQuery = normalize(query);
   const rawQuery = query.toLowerCase().trim();
+  const searchQuery = normalizeSearchText(query); // Remove punctuation/symbols
   const nNameEn = normalize(record.nameEn || "");
   const rawNameEn = (record.nameEn || "").toLowerCase().trim();
+  const searchNameEn = normalizeSearchText(record.nameEn || ""); // Remove punctuation/symbols
   const nNameAr = normalize(record.nameAr || "");
   const altNames = (record.alternativeNames as string[] | null) || [];
   const nAltNames = altNames.map((n) => normalize(n));
   const rawAltNames = altNames.map((n) => n.toLowerCase().trim());
+  const searchAltNames = altNames.map((n) => normalizeSearchText(n)); // Remove punctuation/symbols
 
   // Transliteration: if query is Arabic, also compare against English name via transliteration
   const queryIsArabic = isArabic(query);
   const transQuery = queryIsArabic ? arabicToLatin(query) : null;
 
   // 1. Exact match (highest priority)
-  if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery) {
+  if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery || searchNameEn === searchQuery) {
     return { score: 1.0, matchType: "exact" };
   }
-  if (nAltNames.some((n) => n === nQuery) || rawAltNames.some((n) => n === rawQuery)) {
+  if (nAltNames.some((n) => n === nQuery) || rawAltNames.some((n) => n === rawQuery) || searchAltNames.some((n) => n === searchQuery)) {
     return { score: 0.98, matchType: "exact" };
   }
 
   // 2. Contains match (bidirectional: query in name OR name in query)
   // This handles both "BARASH AVIATION" matching "BARASH AVIATION AND CARGO COMPANY LIMITED"
   // AND "BARASH AVIATION AND CARGO COMPANY LIMITED" matching itself
-  const queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery);
-  const nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn);
+  const queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
+  const nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
   
   if (queryInName || nameInQuery) {
     // If it's a bidirectional match (name contains query AND query contains name = exact match)
@@ -273,8 +290,8 @@ function scoreRecord(
     return { score: 0.92, matchType: "exact" };
   }
   
-  const altQueryInName = nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery));
-  const altNameInQuery = nAltNames.some((n) => nQuery.includes(n)) || rawAltNames.some((n) => rawQuery.includes(n));
+  const altQueryInName = nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery)) || searchAltNames.some((n) => n.includes(searchQuery));
+  const altNameInQuery = nAltNames.some((n) => nQuery.includes(n)) || rawAltNames.some((n) => rawQuery.includes(n)) || searchAltNames.some((n) => searchQuery.includes(n));
   
   if (altQueryInName || altNameInQuery) {
     return { score: 0.88, matchType: "exact" };
@@ -283,7 +300,8 @@ function scoreRecord(
   // 3. Token-based similarity (one-directional)
   const enTokenScore = Math.max(
     tokenSimilarity(query, record.nameEn || ""),
-    tokenSimilarity(rawQuery, rawNameEn)
+    tokenSimilarity(rawQuery, rawNameEn),
+    tokenSimilarity(searchQuery, searchNameEn)
   );
   const arTokenScore = tokenSimilarity(query, record.nameAr || "");
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
@@ -291,7 +309,8 @@ function scoreRecord(
   // 3b. Bidirectional token score (handles different word order)
   const biEn = Math.max(
     bidirectionalTokenScore(query, record.nameEn || ""),
-    bidirectionalTokenScore(rawQuery, rawNameEn)
+    bidirectionalTokenScore(rawQuery, rawNameEn),
+    bidirectionalTokenScore(searchQuery, searchNameEn)
   );
   const biAr = bidirectionalTokenScore(query, record.nameAr || "");
   const biAlt = Math.max(0, ...altNames.map((n) => bidirectionalTokenScore(query, n)));
