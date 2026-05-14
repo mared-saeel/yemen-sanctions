@@ -139,8 +139,8 @@ function normalizeArabic(text: string): string {
 function normalizeEnglish(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9\s]/g, "") // Remove punctuation/symbols instead of converting to spaces
+    .replace(/\s+/g, " ") // Collapse multiple spaces
     .trim();
 }
 
@@ -267,11 +267,20 @@ function scoreRecord(
   const queryIsArabic = isArabic(query);
   const transQuery = queryIsArabic ? arabicToLatin(query) : null;
 
-  // 1. Exact match (highest priority)
-  if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery || searchNameEn === searchQuery) {
+  // 0. Exact match with normalized search text (highest priority - before everything else)
+  // This ensures "HUTHELE, Nasr Mohsen Ali" matches exactly "HUTHELE NASR MOHSEN ALI"
+  if (searchNameEn === searchQuery) {
     return { score: 1.0, matchType: "exact" };
   }
-  if (nAltNames.some((n) => n === nQuery) || rawAltNames.some((n) => n === rawQuery) || searchAltNames.some((n) => n === searchQuery)) {
+  if (searchAltNames.some((n) => n === searchQuery)) {
+    return { score: 0.99, matchType: "exact" };
+  }
+
+  // 1. Exact match (highest priority)
+  if (nNameEn === nQuery || nNameAr === nQuery || rawNameEn === rawQuery) {
+    return { score: 1.0, matchType: "exact" };
+  }
+  if (nAltNames.some((n) => n === nQuery) || rawAltNames.some((n) => n === rawQuery)) {
     return { score: 0.98, matchType: "exact" };
   }
 
@@ -388,6 +397,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
 
   const trimmedQuery = query.trim();
   const nQuery = normalize(trimmedQuery);
+  const normalizedQuery = normalizeSearchText(trimmedQuery); // Remove punctuation/symbols for DB search
 
   // Build filter conditions
   const conditions = [];
@@ -417,10 +427,14 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   const rawQuery_lower = trimmedQuery.toLowerCase();
   
   // Phase 1: Try full-phrase match first (highest priority)
+  // Use both original query and normalized query (without punctuation/symbols)
   const fullPhraseLike = [
     like(sanctionsRecords.nameEn, `%${trimmedQuery}%`),
+    like(sanctionsRecords.nameEn, `%${normalizedQuery}%`),
     like(sanctionsRecords.nameAr, `%${trimmedQuery}%`),
+    like(sanctionsRecords.nameAr, `%${normalizedQuery}%`),
     like(sanctionsRecords.searchIndex, `%${trimmedQuery}%`),
+    like(sanctionsRecords.searchIndex, `%${normalizedQuery}%`),
   ];
   
   const fullPhraseWhere =

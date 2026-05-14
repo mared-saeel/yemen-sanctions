@@ -212,7 +212,9 @@ Detected
 - [ ] إصلاح النص العربي المقلوب في LISTING REASON
 - [ ] إصلاح مشكلة المربعات في Action Taken (النص العربي لا يظهر)
 
-## Phase 27: تحسين البحث - تجاوز الرموز والنقاط
+## Phase 27: تحسين البحث - تجاوز الرموز والنقاط ✅ مكتمل
 - [x] إضافة دالة normalizeSearchText لتجاوز النقاط والرموز والفواصل
 - [x] تطبيق التطبيع على query و database records
-- [x] اختبار البحث عن "HUTHELE, Nasr Mohsen Ali" والتأكد من المطابقة (✅ 100% Exact match)
+- [x] تطبيق التطبيع على البحث من قاعدة البيانات (like queries)
+- [x] إضافة فحص دقيق في scoreRecord قبل حساب النقاط
+- [x] اختبار البحث عن "HUTHELE, Nasr Mohsen Ali" والتأكد من المطابقة (✅ 1 result, 100% Exact match)
