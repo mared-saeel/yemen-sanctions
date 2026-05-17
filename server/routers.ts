@@ -62,7 +62,9 @@ export const appRouter = router({
         }
         // Create session token using the SDK
         const { sdk } = await import("./_core/sdk");
-        const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.username ?? "" });
+        // For local users, use username as openId if not set
+        const openId = user.openId || `local:${user.username}`;
+        const token = await sdk.createSessionToken(openId, { name: user.name ?? user.username ?? "" });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
         await updateUserLastSignIn(user.id);
