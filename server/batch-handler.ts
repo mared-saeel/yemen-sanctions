@@ -11,7 +11,7 @@
  */
 import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
-import { searchSanctions } from "./search-engine";
+import { searchSanctions, loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne } from "./search-engine";
 import { createContext } from "./_core/context";
 import { createAuditLog } from "./db";
 
@@ -128,7 +128,18 @@ async function processJobInBackground(
     job.status = "processing";
 
     const results: BatchRow[] = [];
-    const PARALLEL_BATCH_SIZE = 3; // Reduced from 10 to avoid overwhelming database
+    const PARALLEL_BATCH_SIZE = 10; // Increased from 3 for better parallelization
+
+    // Load all records once for batch processing (much faster than individual DB queries)
+    let allRecords;
+    let fuseIndex;
+    try {
+      allRecords = await loadAllRecordsForBatch();
+      fuseIndex = buildBatchFuseIndex(allRecords);
+    } catch (err) {
+      console.error('[batch-job] Failed to load records for batch processing', err);
+      throw err;
+    }
 
     // Process names in parallel batches for better performance
     for (let i = 0; i < names.length; i += PARALLEL_BATCH_SIZE) {
@@ -138,12 +149,8 @@ async function processJobInBackground(
       const batchResults = await Promise.all(
         batch.map(async ({ row, name }) => {
           try {
-            // Use the same search engine as single-name search — DB queries, no in-memory Fuse
-            const { results: candidates } = await searchSanctions({
-              query: name,
-              limit: 3,
-              threshold: 0.55,
-            });
+            // Use batch-optimized search (no DB calls, pure in-memory)
+            const candidates = batchSearchOne(name, allRecords!, fuseIndex!, 0.55, 3);
 
             let status: BatchRow["status"] = "NO_MATCH";
             let chosenTop = candidates[0] ?? null;
@@ -202,9 +209,9 @@ async function processJobInBackground(
       job.processed = Math.min(i + PARALLEL_BATCH_SIZE, names.length);
       job.progress = Math.round((job.processed / job.total) * 100);
 
-      // Add delay between batches to prevent database overload (but not after the last batch)
+      // Add minimal delay between batches (50ms instead of 100ms since we're not hitting DB)
       if (i + PARALLEL_BATCH_SIZE < names.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
 

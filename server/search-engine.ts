@@ -519,7 +519,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
     }
   }
 
-  // Step 3: If not enough results, do a broader Fuse.js search
+  // Step 3: If not enough results, do a broader Fuse.js search (limited to 1000 records max to avoid memory issues)
   if (scored.length < 5) {
     const allRecords = await db
       .select({
@@ -542,7 +542,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
       })
       .from(sanctionsRecords)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .limit(5000);
+      .limit(1000); // Reduced from 5000 to 1000 to save memory and improve performance
 
     const fuse = new Fuse(allRecords, {
       keys: [
