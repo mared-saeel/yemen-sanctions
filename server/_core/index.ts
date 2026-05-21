@@ -58,16 +58,29 @@ async function startServer() {
     }
   };
 
+  // Auth middleware for authenticated users
+  const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
+      if (!ctx.user) return res.status(401).json({ error: "Unauthorized - Please log in" });
+      (req as express.Request & { user: typeof ctx.user }).user = ctx.user;
+      next();
+    } catch (err) {
+      console.error("[auth-middleware] Error", err);
+      res.status(401).json({ error: "Unauthorized - Please log in" });
+    }
+  };
+
   app.post("/api/admin/import-sanctions", requireAdmin, upload.single("file"), handleImportSanctions);
   app.get("/api/admin/import-logs", requireAdmin, handleGetImportLogs);
 
   // PDF Report (any authenticated user)
   app.get("/api/report/sanctions/:id", handleGeneratePdfReport);
 
-  // Batch Screening
-  app.post("/api/batch/screen", upload.single("file"), handleBatchScreen);
-  app.get("/api/batch/status/:jobId", handleBatchStatus);
-  app.post("/api/batch/export", express.json({ limit: "10mb" }), handleBatchExport);
+  // Batch Screening - all routes require authentication
+  app.post("/api/batch/screen", requireAuth, upload.single("file"), handleBatchScreen);
+  app.get("/api/batch/status/:jobId", requireAuth, handleBatchStatus);
+  app.post("/api/batch/export", requireAuth, express.json({ limit: "10mb" }), handleBatchExport);
 
   // tRPC API
   app.use(
