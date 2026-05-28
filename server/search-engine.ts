@@ -245,6 +245,124 @@ function bidirectionalTokenScore(query: string, target: string, fuzzyThreshold =
   return (2.5 * precision * recall) / (1.5 * precision + recall);
 }
 
+// ─── Phrase Matching: Search for words in correct order ────────────────────────
+/**
+ * Checks if query words appear in the target in the same order.
+ * e.g., "احمد الشرع" should match "احمد حسين الشرع" but not "الشرع احمد"
+ */
+function phraseMatchScore(query: string, target: string): number {
+  const qTokens = normalize(query).split(/\s+/).filter(t => t.length >= 2);
+  const tTokens = normalize(target).split(/\s+/).filter(t => t.length >= 2);
+  
+  if (qTokens.length === 0 || tTokens.length === 0) return 0;
+  if (qTokens.length === 1) return 0; // Single word: use other scoring methods
+  
+  // Find positions of query tokens in target (greedy: first match after previous)
+  const positions: number[] = [];
+  let lastPos = -1;
+  for (const qToken of qTokens) {
+    let found = false;
+    for (let i = lastPos + 1; i < tTokens.length; i++) {
+      if (levenshteinSimilarity(qToken, tTokens[i]) >= 0.80) {
+        positions.push(i);
+        lastPos = i;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return 0; // Token not found after previous position
+  }
+  
+  // All query tokens found in order! Now calculate score based on span
+  // span = distance from first to last token
+  const span = positions[positions.length - 1] - positions[0] + 1;
+  const maxSpan = tTokens.length;
+  
+  // Score: higher if tokens are closer together
+  // span=1 (consecutive): 0.95
+  // span=2 (one word between): 0.90
+  // span=3 (two words between): 0.85
+  // etc.
+  const spanScore = Math.max(0.75, 1 - ((span - 1) / maxSpan) * 0.3);
+  return spanScore;
+}
+
+// ─── Last-Word Priority: Prioritize matching the last word (surname) ────────────
+/**
+ * Gives higher priority to matching the last word (usually the surname).
+ * e.g., "الشرع" in "احمد حسين الشرع" is the most important word
+ */
+function lastWordPriorityScore(query: string, target: string): number {
+  const qTokens = normalize(query).split(/\s+/).filter(t => t.length >= 2);
+  const tTokens = normalize(target).split(/\s+/).filter(t => t.length >= 2);
+  
+  if (qTokens.length === 0 || tTokens.length === 0) return 0;
+  
+  const lastQToken = qTokens[qTokens.length - 1];
+  const lastTToken = tTokens[tTokens.length - 1];
+  
+  // Check if last words match
+  const lastWordSimilarity = levenshteinSimilarity(lastQToken, lastTToken);
+  
+  if (lastWordSimilarity >= 0.85) {
+    // Last words match! Now check if other query words are in target
+    let otherMatches = 0;
+    for (let i = 0; i < qTokens.length - 1; i++) {
+      for (let j = 0; j < tTokens.length - 1; j++) {
+        if (levenshteinSimilarity(qTokens[i], tTokens[j]) >= 0.75) {
+          otherMatches++;
+          break;
+        }
+      }
+    }
+    
+    // Give high score if last word matches
+    const otherScore = otherMatches / Math.max(1, qTokens.length - 1);
+    return 0.82 + (otherScore * 0.18); // 0.82-1.0 range
+  }
+  
+  return 0;
+}
+
+// ─── Proximity Scoring: Bonus for words that are close together ────────────────
+/**
+ * Gives bonus points when query words appear close to each other in target.
+ * e.g., "حميد الاحمر" should match "حميد عبدالله حسين الاحمر" with good score
+ */
+function proximityScore(query: string, target: string): number {
+  const qTokens = normalize(query).split(/\s+/).filter(t => t.length >= 2);
+  const tTokens = normalize(target).split(/\s+/).filter(t => t.length >= 2);
+  
+  if (qTokens.length === 0 || tTokens.length === 0) return 0;
+  if (qTokens.length === 1) return 0; // No proximity for single word
+  
+  // Find positions of query tokens in target
+  const positions: number[] = [];
+  for (const qToken of qTokens) {
+    for (let i = 0; i < tTokens.length; i++) {
+      if (levenshteinSimilarity(qToken, tTokens[i]) >= 0.75) {
+        positions.push(i);
+        break;
+      }
+    }
+  }
+  
+  if (positions.length < qTokens.length) return 0; // Not all tokens found
+  
+  // Calculate average distance between consecutive positions
+  let totalDistance = 0;
+  for (let i = 1; i < positions.length; i++) {
+    totalDistance += positions[i] - positions[i - 1];
+  }
+  const avgDistance = totalDistance / (positions.length - 1);
+  
+  // Closer words = higher score
+  // If avgDistance = 1 (consecutive), score = 0.95
+  // If avgDistance = 5, score = 0.6
+  const proximityBonus = Math.max(0.5, 1 - (avgDistance - 1) * 0.1);
+  return proximityBonus;
+}
+
 // ─── Score a single record ────────────────────────────────────────────────────
 
 function scoreRecord(
@@ -343,6 +461,36 @@ function scoreRecord(
     );
   }
 
+  // 3d. NEW: Phrase Matching (words in correct order)
+  const phraseEn = Math.max(
+    phraseMatchScore(query, record.nameEn || ""),
+    phraseMatchScore(rawQuery, rawNameEn),
+    phraseMatchScore(searchQuery, searchNameEn)
+  );
+  const phraseAr = phraseMatchScore(query, record.nameAr || "");
+  const phraseAlt = Math.max(0, ...altNames.map((n) => phraseMatchScore(query, n)));
+  const phraseScore = Math.max(phraseEn, phraseAr, phraseAlt);
+
+  // 3e. NEW: Last-Word Priority (surname matching)
+  const lastWordEn = Math.max(
+    lastWordPriorityScore(query, record.nameEn || ""),
+    lastWordPriorityScore(rawQuery, rawNameEn),
+    lastWordPriorityScore(searchQuery, searchNameEn)
+  );
+  const lastWordAr = lastWordPriorityScore(query, record.nameAr || "");
+  const lastWordAlt = Math.max(0, ...altNames.map((n) => lastWordPriorityScore(query, n)));
+  const lastWordScore = Math.max(lastWordEn, lastWordAr, lastWordAlt);
+
+  // 3f. NEW: Proximity Scoring (words close together)
+  const proximityEn = Math.max(
+    proximityScore(query, record.nameEn || ""),
+    proximityScore(rawQuery, rawNameEn),
+    proximityScore(searchQuery, searchNameEn)
+  );
+  const proximityAr = proximityScore(query, record.nameAr || "");
+  const proximityAlt = Math.max(0, ...altNames.map((n) => proximityScore(query, n)));
+  const proxScore = Math.max(proximityEn, proximityAr, proximityAlt);
+
   const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore, transTokenScore);
   const biScore = Math.max(biEn, biAr, biAlt, transBiScore);
 
@@ -360,12 +508,24 @@ function scoreRecord(
     : 0;
   const levScore = Math.max(levEn, levAr, levTrans);
 
-  // Combine: bidirectional token score gets highest weight since it handles order-independent matching
-  const finalScore = Math.max(
-    biScore * 0.95,       // bidirectional token overlap (best for multi-word names)
-    tokenScore * 0.85,   // one-directional token
-    levScore * 0.75      // full string levenshtein
-  );
+  // Combine: NEW algorithm with phrase matching, last-word priority, and proximity
+  // If phrase matching found a match (score > 0), use it as primary score
+  // Otherwise, fall back to other scoring methods
+  let finalScore: number;
+  
+  if (phraseScore > 0) {
+    finalScore = phraseScore * 0.95;
+  } else if (lastWordScore > 0) {
+    finalScore = lastWordScore * 0.92;
+  } else if (proxScore > 0) {
+    finalScore = proxScore * 0.90;
+  } else if (biScore > 0.75) {
+    finalScore = biScore * 0.85;
+  } else if (levScore > 0.75) {
+    finalScore = levScore * 0.70;
+  } else {
+    finalScore = tokenScore > 0.80 ? tokenScore * 0.50 : 0;
+  }
 
   if (finalScore >= 0.9) return { score: finalScore, matchType: "exact" };
   if (finalScore >= 0.6) return { score: finalScore, matchType: "fuzzy" };
@@ -385,7 +545,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
     filters = {},
     limit = 20,
     offset = 0,
-    threshold = 0.35,
+    threshold = 0.60,
   } = options;
 
   if (!query || query.trim().length < 2) {
