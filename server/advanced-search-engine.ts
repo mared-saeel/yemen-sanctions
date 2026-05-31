@@ -119,21 +119,33 @@ export function intelligentNameMatch(query: string, name: string): number {
   let matchedWords = 0;
   
   // For each query word, find the best match in name
-  for (const qWord of queryWords) {
+  for (let qIdx = 0; qIdx < queryWords.length; qIdx++) {
+    const qWord = queryWords[qIdx];
     let bestScore = 0;
+    let bestNIdx = -1;
     
-    for (const nWord of nameWords) {
+    for (let nIdx = 0; nIdx < nameWords.length; nIdx++) {
+      const nWord = nameWords[nIdx];
+      
       // Exact match (highest priority)
       if (qWord === nWord) {
         bestScore = Math.max(bestScore, 1.0);
+        bestNIdx = nIdx;
         continue;
       }
       
       // Phonetic match (handles typos) - MUCH HIGHER PRIORITY
       const phoneticScore = phoneticSimilarity(qWord, nWord);
       if (phoneticScore > 0.55) {
+        // IMPORTANT: For the first word (given name), require higher phonetic match (0.75+)
+        // This prevents "خميد" from matching "الاحمد" just because both have similar sounds
+        if (qIdx === 0 && phoneticScore < 0.75) {
+          // First word requires higher phonetic match
+          continue;
+        }
         // Give very high score for phonetic matches
         bestScore = Math.max(bestScore, 0.99 * phoneticScore);
+        bestNIdx = nIdx;
         continue;
       }
       
@@ -142,6 +154,7 @@ export function intelligentNameMatch(query: string, name: string): number {
         const ratio = Math.min(qWord.length, nWord.length) / Math.max(qWord.length, nWord.length);
         if (ratio > 0.6) {
           bestScore = Math.max(bestScore, 0.75 * ratio);
+          bestNIdx = nIdx;
         }
       }
     }
@@ -216,9 +229,40 @@ export function comprehensiveNameScore(query: string, name: string): number {
   // 1. Exact match (highest priority)
   if (nQuery === nName) return 1.0;
   
+  // IMPORTANT: Check if first word matches before giving high scores
+  // This prevents "خميد الاحمر" from matching "نجم حمد الاحمد" just because last words are similar
+  const queryWords = nQuery.split(/\s+/).filter(w => w.length > 0);
+  const nameWords = nName.split(/\s+/).filter(w => w.length > 0);
+  
+  // If query has multiple words, check if first word matches reasonably
+  if (queryWords.length > 1 && nameWords.length > 0) {
+    const firstQueryWord = queryWords[0];
+    const firstNameWord = nameWords[0];
+    const firstWordPhonetic = phoneticSimilarity(firstQueryWord, firstNameWord);
+    
+    // If first words don't match well (< 0.70), don't give very high scores
+    if (firstWordPhonetic < 0.70) {
+      // First word doesn't match well - reduce priority of last-name-only matches
+      // Only proceed if we have strong evidence elsewhere
+    }
+  }
+  
   // 2. Last name match (very high priority for Arabic names)
   const lastNameScore = lastNameMatch(query, name);
-  if (lastNameScore > 0.95) return lastNameScore;
+  if (lastNameScore > 0.95) {
+    // IMPORTANT: For multi-word queries, also check first word before returning high score
+    if (queryWords.length > 1 && nameWords.length > 0) {
+      const firstQueryWord = queryWords[0];
+      const firstNameWord = nameWords[0];
+      const firstWordPhonetic = phoneticSimilarity(firstQueryWord, firstNameWord);
+      // Only return high score if first word also matches reasonably (> 0.70)
+      if (firstWordPhonetic < 0.70) {
+        // First word doesn't match - reduce the score
+        return lastNameScore * 0.6; // Reduce score significantly
+      }
+    }
+    return lastNameScore;
+  }
   
   // 3. Intelligent name matching (considers all words)
   const intelligentScore = intelligentNameMatch(query, name);

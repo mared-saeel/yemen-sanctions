@@ -182,6 +182,7 @@ function levenshteinSimilarity(a: string, b: string): number {
 /**
  * One-directional token similarity: for each query token, find best match in target.
  * Order-independent.
+ * IMPORTANT: For multi-word queries, the first word must match well, otherwise reduce score
  */
 function tokenSimilarity(query: string, target: string): number {
   const qTokens = normalize(query).split(/\s+/).filter(Boolean);
@@ -189,12 +190,20 @@ function tokenSimilarity(query: string, target: string): number {
   if (qTokens.length === 0 || tTokens.length === 0) return 0;
 
   let totalScore = 0;
-  for (const qt of qTokens) {
+  for (let i = 0; i < qTokens.length; i++) {
+    const qt = qTokens[i];
     let best = 0;
     for (const tt of tTokens) {
       const sim = levenshteinSimilarity(qt, tt);
       if (sim > best) best = sim;
     }
+    
+    // IMPORTANT: For the first word (given name), require higher match (0.75+)
+    // This prevents "خميد" from matching "حمد" just because they're similar
+    if (i === 0 && qTokens.length > 1 && best < 0.75) {
+      best = best * 0.4; // Reduce score significantly if first word doesn't match well
+    }
+    
     totalScore += best;
   }
   return totalScore / qTokens.length;
@@ -258,6 +267,19 @@ function phraseMatchScore(query: string, target: string): number {
   if (qTokens.length === 0 || tTokens.length === 0) return 0;
   if (qTokens.length === 1) return 0; // Single word: use other scoring methods
   
+  // IMPORTANT: For multi-word queries, check if first word matches first word of target
+  // This prevents "خميد الاحمر" from matching "نجم حمد الاحمد" just because last words match
+  if (qTokens.length > 1 && tTokens.length > 0) {
+    const firstQToken = qTokens[0];
+    const firstTToken = tTokens[0];
+    const firstWordSimilarity = levenshteinSimilarity(firstQToken, firstTToken);
+    
+    // If first word doesn't match well (< 0.75), don't give high score
+    if (firstWordSimilarity < 0.75) {
+      return 0; // Reject this match - first word doesn't match
+    }
+  }
+  
   // Find positions of query tokens in target (greedy: first match after previous)
   const positions: number[] = [];
   let lastPos = -1;
@@ -306,6 +328,18 @@ function lastWordPriorityScore(query: string, target: string): number {
   const lastWordSimilarity = levenshteinSimilarity(lastQToken, lastTToken);
   
   if (lastWordSimilarity >= 0.85) {
+    // IMPORTANT: For multi-word queries, also check if first word matches well
+    if (qTokens.length > 1 && tTokens.length > 0) {
+      const firstQToken = qTokens[0];
+      const firstTToken = tTokens[0];
+      const firstWordSimilarity = levenshteinSimilarity(firstQToken, firstTToken);
+      
+      // If first word doesn't match well (< 0.75), don't give high score
+      if (firstWordSimilarity < 0.75) {
+        return 0; // Reject this match - first word doesn't match
+      }
+    }
+    
     // Last words match! Now check if other query words are in target
     let otherMatches = 0;
     for (let i = 0; i < qTokens.length - 1; i++) {
@@ -336,6 +370,18 @@ function proximityScore(query: string, target: string): number {
   
   if (qTokens.length === 0 || tTokens.length === 0) return 0;
   if (qTokens.length === 1) return 0; // No proximity for single word
+  
+  // IMPORTANT: For multi-word queries, check if first word matches first word of target
+  if (qTokens.length > 1 && tTokens.length > 0) {
+    const firstQToken = qTokens[0];
+    const firstTToken = tTokens[0];
+    const firstWordSimilarity = levenshteinSimilarity(firstQToken, firstTToken);
+    
+    // If first word doesn't match well (< 0.75), don't give high score
+    if (firstWordSimilarity < 0.75) {
+      return 0; // Reject this match - first word doesn't match
+    }
+  }
   
   // Find positions of query tokens in target
   const positions: number[] = [];
@@ -686,7 +732,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
         notes: record.notes,
         referenceNumber: record.referenceNumber,
         rawNotes: record.rawNotes,
-        matchScore: Math.round(score * 100),
+        matchScore: Math.round(Math.min(1.0, score) * 100),
         matchType,
       });
     }
@@ -723,7 +769,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
         { name: "nameAr", weight: 2 },
         { name: "alternativeNames", weight: 1.5 },
       ],
-      threshold: 0.5,
+      threshold: 0.4, // Lowered from 0.5 to be more strict
       includeScore: true,
       ignoreLocation: true,
       minMatchCharLength: 2,
@@ -751,7 +797,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
           notes: fr.item.notes,
           referenceNumber: fr.item.referenceNumber,
           rawNotes: fr.item.rawNotes,
-          matchScore: Math.round(fuseScore * 100),
+          matchScore: Math.round(Math.min(1.0, fuseScore) * 100),
           matchType: "fuzzy",
         });
       }
@@ -903,7 +949,7 @@ export function batchSearchOne(
         notes: record.notes,
         referenceNumber: record.referenceNumber,
         rawNotes: record.rawNotes,
-        matchScore: Math.round(score * 100),
+        matchScore: Math.round(Math.min(1.0, score) * 100),
         matchType,
       });
     }
@@ -940,7 +986,7 @@ export function batchSearchOne(
             notes: fr.item.notes,
             referenceNumber: fr.item.referenceNumber,
             rawNotes: fr.item.rawNotes,
-            matchScore: Math.round(fuseScore * 100),
+            matchScore: Math.round(Math.min(1.0, fuseScore) * 100),
             matchType: "fuzzy",
           });
         }
