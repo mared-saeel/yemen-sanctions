@@ -133,7 +133,7 @@ async function processJobInBackground(
     job.startedAt = Date.now();
 
     const results: BatchRow[] = [];
-    const PARALLEL_BATCH_SIZE = 15; // زيادة من 10 للأداء الأفضل
+    const PARALLEL_BATCH_SIZE = 25; // زيادة إلى 25 لتحسين الأداء
 
     console.log(`[batch-${jobId}] Starting processing of ${names.length} names`);
 
@@ -220,9 +220,9 @@ async function processJobInBackground(
 
         console.log(`[batch-${jobId}] Progress: ${job.processed}/${job.total} (${job.progress}%)`);
 
-        // تأخير صغير بين الدفعات (30ms بدلاً من 50ms)
+        // تأخير صغير جداً بين الدفعات (10ms للسرعة)
         if (i + PARALLEL_BATCH_SIZE < names.length) {
-          await new Promise(resolve => setTimeout(resolve, 30));
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
       } catch (batchErr) {
         console.error(`[batch-${jobId}] Batch processing error`, batchErr);
@@ -331,8 +331,8 @@ export async function handleBatchScreen(req: Request, res: Response) {
       return res.status(400).json({ error: "No names found - Please add names in the first column starting from row 2" });
     }
 
-    if (names.length > 500) {
-      return res.status(400).json({ error: `Too many names (${names.length}) - Maximum 500 names per batch` });
+    if (names.length > 100) {
+      return res.status(400).json({ error: `Too many names (${names.length}) - Maximum 100 names per batch` });
     }
 
     console.log(`[batch-screen] Extracted ${names.length} names from file`);

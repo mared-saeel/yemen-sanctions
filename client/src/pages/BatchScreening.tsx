@@ -82,6 +82,7 @@ export default function BatchScreening() {
       toast.error("File size must be less than 10MB");
       return;
     }
+    // Note: Server enforces 100 name limit
     setFile(f);
     setResults(null);
     setSummary(null);
@@ -307,7 +308,7 @@ export default function BatchScreening() {
                       <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Supports .xlsx and .xls — up to 500 names, 10MB max
+                      Supports .xlsx and .xls — up to 100 names, 10MB max
                     </p>
                   </div>
                 )}
