@@ -8,6 +8,7 @@ import levenshtein from "fast-levenshtein";
 import { getDb } from "./db";
 import { sanctionsRecords } from "../drizzle/schema";
 import { like, or, eq, and, gte, lte, inArray, sql } from "drizzle-orm";
+import { comprehensiveNameScore, phoneticSimilarity, lastNameMatch } from "./advanced-search-engine";
 
 export interface SearchFilters {
   entityType?: "individual" | "organisation" | "vessel" | "unspecified" | null;
@@ -527,8 +528,20 @@ function scoreRecord(
     finalScore = tokenScore > 0.80 ? tokenScore * 0.50 : 0;
   }
 
+  // NEW: Use comprehensive scoring as final fallback
+  const comprehensiveScore = comprehensiveNameScore(query, record.nameEn || "");
+  const comprehensiveScoreAr = comprehensiveNameScore(query, record.nameAr || "");
+  const comprehensiveAltScore = Math.max(0, ...altNames.map((n) => comprehensiveNameScore(query, n)));
+  const finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
+  
+  // If comprehensive scoring gives a better result, use it
+  if (finalComprehensiveScore > finalScore) {
+    finalScore = finalComprehensiveScore;
+  }
+  
   if (finalScore >= 0.9) return { score: finalScore, matchType: "exact" };
-  if (finalScore >= 0.6) return { score: finalScore, matchType: "fuzzy" };
+  if (finalScore >= 0.75) return { score: finalScore, matchType: "fuzzy" };
+  if (finalScore >= 0.6) return { score: finalScore, matchType: "phonetic" };
   return { score: finalScore, matchType: "fuzzy" };
 }
 
