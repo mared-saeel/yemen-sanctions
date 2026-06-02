@@ -15,6 +15,7 @@ import ImportData from "./pages/ImportData";
 import AppLayout from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import BatchScreening from "./pages/BatchScreening";
+import EditRecord from "./pages/EditRecord";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/search" component={SearchPage} />
       <Route path="/record/:id" component={RecordDetail} />
+      <Route path="/record/:id/edit" component={EditRecord} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/users" component={AdminUsers} />
       <Route path="/admin/companies" component={AdminCompanies} />

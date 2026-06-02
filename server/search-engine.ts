@@ -11,6 +11,7 @@ import { like, or, eq, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { comprehensiveNameScore, phoneticSimilarity, lastNameMatch } from "./advanced-search-engine";
 import { multiWordMatch, calculatePriority } from "./multi-word-matcher";
 import { smartWordMatch, calculateSmartPriority } from "./smart-word-matcher";
+import { detectLanguage } from "./language-detector";
 
 export interface SearchFilters {
   entityType?: "individual" | "organisation" | "vessel" | "unspecified" | null;
@@ -544,14 +545,37 @@ function scoreRecord(
   const biScore = Math.max(biEn, biAr, biAlt, transBiScore);
 
   // 3g. NEW: Smart Multi-Word Matching (2+ words matching = high priority)
+  // LANGUAGE-AWARE: Only match with same language
   let smartMultiWordScore = 0;
-  const smartMatchResultEn = smartWordMatch(query, record.nameEn || "", null, 0.65);
-  const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
-  const smartMatchResults = [smartMatchResultEn, smartMatchResultAr];
+  const queryIsEnglishLang = /[a-zA-Z]/.test(query);
   
-  for (const matchResult of smartMatchResults) {
-    if (matchResult.matchedWords >= 2) {
-      smartMultiWordScore = Math.max(smartMultiWordScore, matchResult.matchScore);
+  // Only search in Arabic names if query is Arabic
+  if (!queryIsEnglishLang) {
+    const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
+    if (smartMatchResultAr.matchedWords >= 2) {
+      smartMultiWordScore = Math.max(smartMultiWordScore, smartMatchResultAr.matchScore);
+    }
+  }
+  
+  // Only search in English names if query is English
+  if (queryIsEnglishLang) {
+    const smartMatchResultEn = smartWordMatch(query, record.nameEn || "", null, 0.65);
+    if (smartMatchResultEn.matchedWords >= 2) {
+      smartMultiWordScore = Math.max(smartMultiWordScore, smartMatchResultEn.matchScore);
+    }
+  }
+  
+  // If query is mixed or fallback: search both
+  else {
+    // Mixed or fallback: search both
+    const smartMatchResultEn = smartWordMatch(query, record.nameEn || "", "", 0.65);
+    const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
+    const smartMatchResults = [smartMatchResultEn, smartMatchResultAr];
+    
+    for (const matchResult of smartMatchResults) {
+      if (matchResult.matchedWords >= 2) {
+        smartMultiWordScore = Math.max(smartMultiWordScore, matchResult.matchScore);
+      }
     }
   }
   

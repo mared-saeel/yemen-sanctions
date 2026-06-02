@@ -284,6 +284,45 @@ export const appRouter = router({
         }),
     }),
 
+    updateSanctionRecord: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        nameEn: z.string().optional(),
+        nameAr: z.string().optional(),
+        entityType: z.enum(["individual", "organisation", "vessel", "unspecified"]).optional(),
+        listingDate: z.string().optional(),
+        listingReason: z.string().optional(),
+        issuingBody: z.string().optional(),
+        legalBasis: z.string().optional(),
+        actionTaken: z.string().optional(),
+        nationality: z.string().optional(),
+        dateOfBirth: z.string().optional(),
+        placeOfBirth: z.string().optional(),
+        notes: z.string().optional(),
+        referenceNumber: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        const { id, ...updates } = input;
+
+        await db
+          .update(sanctionsRecords)
+          .set(updates)
+          .where(eq(sanctionsRecords.id, id));
+
+        await createAuditLog({
+          userId: ctx.user.id,
+          companyId: ctx.user.companyId ?? undefined,
+          userName: ctx.user.name ?? undefined,
+          action: "admin",
+          query: `update:record:${id}`,
+          resultsCount: 1,
+        });
+
+        return { success: true };
+      }),
+
     auditLogs: router({
       list: adminProcedure
         .input(z.object({

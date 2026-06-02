@@ -477,6 +477,8 @@ function ResultCard({
   query: string;
   onView: () => void;
 }) {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const scoreColor =
     result.matchScore >= 85 ? "score-high" :
     result.matchScore >= 60 ? "score-medium" : "score-low";
@@ -557,6 +559,16 @@ function ResultCard({
             <Eye size={12} className="mr-1" />
             View
           </Button>
+          {user?.role === "admin" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-amber-600 hover:text-amber-700 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); navigate(`/record/${result.id}/edit`); }}
+            >
+              Edit
+            </Button>
+          )}
         </div>
       </div>
     </div>

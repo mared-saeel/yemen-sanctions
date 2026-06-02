@@ -88,6 +88,7 @@ export function levenshteinSimilarity(a: string, b: string): number {
 /**
  * البحث الذكي عن الكلمات المتطابقة
  * يجد أفضل تطابق لكل كلمة من الاستعلام في السجل
+ * + البحث العكسي: يبحث عن كلمات السجل في الاستعلام
  */
 export function smartWordMatch(
   queryText: string,
@@ -138,6 +139,25 @@ export function smartWordMatch(
       usedRecordIndices.add(bestMatch.index);
     } else {
       unmatchedWords.push(queryWord);
+    }
+  }
+
+  // البحث العكسي: البحث عن كلمات السجل في الاستعلام (للعثور على كلمات إضافية)
+  const usedQueryIndices = new Set<number>();
+  for (let i = 0; i < allRecordKeywords.length; i++) {
+    if (!usedRecordIndices.has(i)) {
+      const recordWord = allRecordKeywords[i];
+      for (let j = 0; j < queryKeywords.length; j++) {
+        if (!usedQueryIndices.has(j)) {
+          const similarity = levenshteinSimilarity(recordWord, queryKeywords[j]);
+          if (similarity >= similarityThreshold && !matchedWords.includes(queryKeywords[j])) {
+            matchedWords.push(queryKeywords[j]);
+            usedRecordIndices.add(i);
+            usedQueryIndices.add(j);
+            break;
+          }
+        }
+      }
     }
   }
 
