@@ -37,7 +37,7 @@ export function normalizeText(text: string): string {
  */
 export function extractKeywords(text: string): string[] {
   const STOP_WORDS = new Set([
-    "شركة", "مؤسسة", "مجموعة", "عبد", "ابن", "بن", "ال", "و", "أو", "في", "من", "إلى", "عن",
+    "شركة", "مؤسسة", "مجموعة", "ابن", "بن", "و", "أو", "في", "من", "إلى", "عن",
     "the", "al", "el", "bin", "ibn", "and", "or", "in", "of", "to", "for", "co", "ltd", "inc",
     "a", "an", "the", "is", "are", "be", "been", "being",
   ]);
