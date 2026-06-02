@@ -9,6 +9,8 @@ import { getDb } from "./db";
 import { sanctionsRecords } from "../drizzle/schema";
 import { like, or, eq, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { comprehensiveNameScore, phoneticSimilarity, lastNameMatch } from "./advanced-search-engine";
+import { multiWordMatch, calculatePriority } from "./multi-word-matcher";
+import { smartWordMatch, calculateSmartPriority } from "./smart-word-matcher";
 
 export interface SearchFilters {
   entityType?: "individual" | "organisation" | "vessel" | "unspecified" | null;
@@ -541,6 +543,30 @@ function scoreRecord(
   const tokenScore = Math.max(enTokenScore, arTokenScore, altTokenScore, transTokenScore);
   const biScore = Math.max(biEn, biAr, biAlt, transBiScore);
 
+  // 3g. NEW: Smart Multi-Word Matching (2+ words matching = high priority)
+  let smartMultiWordScore = 0;
+  const smartMatchResultEn = smartWordMatch(query, record.nameEn || "", null, 0.65);
+  const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
+  const smartMatchResults = [smartMatchResultEn, smartMatchResultAr];
+  
+  for (const matchResult of smartMatchResults) {
+    if (matchResult.matchedWords >= 2) {
+      smartMultiWordScore = Math.max(smartMultiWordScore, matchResult.matchScore);
+    }
+  }
+  
+  // 3h. Legacy Multi-Word Matching
+  let multiWordScore = 0;
+  const matchResultEn = multiWordMatch(query, record.nameEn || "", null, 0.70);
+  const matchResultAr = multiWordMatch(query, "", record.nameAr || "", 0.70);
+  const matchResults = [matchResultEn, matchResultAr];
+  
+  for (const matchResult of matchResults) {
+    if (matchResult.matchedWords >= 2) {
+      multiWordScore = Math.max(multiWordScore, matchResult.matchScore);
+    }
+  }
+
   // 4. Full Levenshtein
   const levEn = Math.max(
     levenshteinSimilarity(nQuery, nNameEn),
@@ -555,12 +581,14 @@ function scoreRecord(
     : 0;
   const levScore = Math.max(levEn, levAr, levTrans);
 
-  // Combine: NEW algorithm with phrase matching, last-word priority, and proximity
-  // If phrase matching found a match (score > 0), use it as primary score
-  // Otherwise, fall back to other scoring methods
+  // Combine: NEW algorithm with smart multi-word matching as primary
   let finalScore: number;
   
-  if (phraseScore > 0) {
+  if (smartMultiWordScore > 0) {
+    finalScore = smartMultiWordScore * 0.99;
+  } else if (multiWordScore > 0) {
+    finalScore = multiWordScore * 0.98;
+  } else if (phraseScore > 0) {
     finalScore = phraseScore * 0.95;
   } else if (lastWordScore > 0) {
     finalScore = lastWordScore * 0.92;
