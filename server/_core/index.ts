@@ -11,7 +11,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleImportSanctions, handleGetImportLogs } from "../import-handler";
 import { handleGeneratePdfReport } from "../pdf-report";
-import { handleBatchScreen, handleBatchStatus, handleBatchExport } from "../batch-handler";
+// Batch handler routes removed - will be reimplemented
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -77,10 +77,7 @@ async function startServer() {
   // PDF Report (any authenticated user)
   app.get("/api/report/sanctions/:id", handleGeneratePdfReport);
 
-  // Batch Screening - all routes require authentication
-  app.post("/api/batch/screen", requireAuth, upload.single("file"), handleBatchScreen);
-  app.get("/api/batch/status/:jobId", requireAuth, handleBatchStatus);
-  app.post("/api/batch/export", requireAuth, express.json({ limit: "10mb" }), handleBatchExport);
+  // Batch Screening - will be reimplemented
 
   // tRPC API
   app.use(

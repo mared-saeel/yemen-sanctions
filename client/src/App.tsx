@@ -14,7 +14,7 @@ import AdminAuditLogs from "./pages/AdminAuditLogs";
 import ImportData from "./pages/ImportData";
 import AppLayout from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
-import BatchScreening from "./pages/BatchScreening";
+import BatchPage from "./pages/BatchPage";
 import EditRecord from "./pages/EditRecord";
 
 function Router() {
@@ -30,7 +30,7 @@ function Router() {
       <Route path="/admin/companies" component={AdminCompanies} />
       <Route path="/admin/audit-logs" component={AdminAuditLogs} />
       <Route path="/admin/import-data" component={ImportData} />
-      <Route path="/batch" component={BatchScreening} />
+      <Route path="/batch" component={BatchPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

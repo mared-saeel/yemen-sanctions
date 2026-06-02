@@ -22,7 +22,8 @@ import {
   updateUserLastSignIn,
 } from "./db";
 import bcrypt from "bcryptjs";
-import { searchSanctions, aiEnhancedSearch, getRecordById, getFilterOptions } from "./search-engine";
+import { searchSanctions, aiEnhancedSearch, getRecordById, getFilterOptions, loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne } from "./search-engine";
+import { processBatch, formatBatchResults, getBatchStatistics } from "./batch-processor";
 import { sanctionsRecords } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { ENV } from "./_core/env";
@@ -336,6 +337,41 @@ export const appRouter = router({
           return getAuditLogs(input);
         }),
     }),
+  }),
+
+  // ─── Batch Processing ────────────────────────────────────────────────────────
+  batch: router({
+    process: adminProcedure
+      .input(z.object({
+        names: z.array(z.string()).min(1).max(100),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // Process batch
+          const batchItems = input.names.map(name => ({ name }));
+          const results = await processBatch(batchItems);
+
+          // Calculate statistics
+          const stats = getBatchStatistics(results);
+
+          // Log the batch operation
+          await createAuditLog({
+            userId: ctx.user.id,
+            companyId: ctx.user.companyId ?? undefined,
+            userName: ctx.user.name ?? undefined,
+            action: "search",
+            query: `batch:${input.names.length}:names`,
+            resultsCount: results.filter((r: any) => r.status === 'MATCH').length,
+          });
+
+          return { results, stats };
+        } catch (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error instanceof Error ? error.message : "Batch processing failed",
+          });
+        }
+      }),
   }),
 
   // ─── Export ────────────────────────────────────────────────────────────────
