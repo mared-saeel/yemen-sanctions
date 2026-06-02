@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, username, passwordHash FROM users WHERE username IS NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, username, passwordHash FROM users WHERE username IS NOT NULL;",
+  "rows": [
+    {
+      "id": "180025",
+      "username": "mared",
+      "passwordHash": "$2b$12$tv0mOlQU4NCfFiZflP86Z.YJzouxaNrNcn3.DGSpNj.nQ6URtY4tm"
+    },
+    {
+      "id": "180132",
+      "username": "maged",
+      "passwordHash": "$2b$10$hMEH2Cr3Dgpu6LOR1IaBmO6HGL9dt/5DHysvYETiYrgMd7XZX/7te"
+    },
+    {
+      "id": "900006",
+      "username": "adenbank",
+      "passwordHash": "$2b$12$l2i09uZpSyFU/1mKduyAOeM4wdxHfHWrDi.A1DlhUKXmFYzI8ZaEa"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tpasswordHash\n180025\tmared\t$2b$12$tv0mOlQU4NCfFiZflP86Z.YJzouxaNrNcn3.DGSpNj.nQ6URtY4tm\n180132\tmaged\t$2b$10$hMEH2Cr3Dgpu6LOR1IaBmO6HGL9dt/5DHysvYETiYrgMd7XZX/7te\n900006\tadenbank\t$2b$12$l2i09uZpSyFU/1mKduyAOeM4wdxHfHWrDi.A1DlhUKXmFYzI8ZaEa\n",
+  "stderr": "",
+  "execution_time_ms": 604
+}

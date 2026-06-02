@@ -36,7 +36,20 @@ function BatchPage() {
   const [results, setResults] = useState<BatchResult[]>([]);
   const [stats, setStats] = useState<BatchStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const batchMutation = trpc.batch.process.useMutation({
+    onSuccess: (data) => {
+      setResults(data.results as BatchResult[]);
+      setStats(data.stats as BatchStats);
+      setLoading(false);
+    },
+    onError: (err) => {
+      setError(err.message || 'An error occurred during batch processing');
+      setLoading(false);
+    },
+  });
 
   if (!user) {
     return (
@@ -58,46 +71,48 @@ function BatchPage() {
       setError(null);
       setResults([]);
       setStats(null);
+      setFileName(file.name);
 
       // Read Excel file
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json<{ name?: string; [key: string]: any }>(worksheet);
+      const data = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { header: 1 });
 
-      // Extract names (first column or 'name' column)
-      const names = data
-        .map((row) => {
-          const name = row.name || Object.values(row)[0];
-          return typeof name === 'string' ? name.trim() : null;
-        })
-        .filter((name): name is string => name !== null && name.length > 0)
-        .slice(0, 100); // Max 100 names
+      // Extract names - skip header row, get first column
+      const names: string[] = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (row && row[0]) {
+          const name = String(row[0]).trim();
+          if (name.length > 0) {
+            names.push(name);
+          }
+        }
+      }
 
       if (names.length === 0) {
-        setError('No valid names found in the file');
+        setError('No valid names found in the file. Make sure the first column contains names.');
         setLoading(false);
         return;
       }
 
-      // Send to server for batch processing
-      const response = await fetch('/api/batch/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ names }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.statusText}`);
+      if (names.length > 100) {
+        setError(`File contains ${names.length} names. Maximum allowed is 100.`);
+        setLoading(false);
+        return;
       }
 
-      const { results: batchResults, stats: batchStats } = await response.json();
-      setResults(batchResults);
-      setStats(batchStats);
+      // Send to server via tRPC
+      batchMutation.mutate({ names });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Failed to read the file. Please make sure it is a valid Excel file.');
       setLoading(false);
+    }
+
+    // Reset file input so same file can be uploaded again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -132,11 +147,13 @@ function BatchPage() {
         {/* Upload Section */}
         <Card className="p-8 mb-8">
           <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:bg-accent/50 transition"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => !loading && fileInputRef.current?.click()}
           >
             <Upload className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-lg font-semibold text-foreground mb-2">Upload Excel File</p>
-            <p className="text-sm text-muted-foreground mb-4">Click to select or drag and drop</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {fileName ? `Selected: ${fileName}` : 'Click to select or drag and drop (.xlsx, .xls, .csv)'}
+            </p>
             <input
               ref={fileInputRef}
               type="file"

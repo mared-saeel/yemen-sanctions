@@ -1,0 +1,38 @@
+{
+  "query": "SELECT id, username, name, role, openId FROM users LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user fhekVHbN1kp779L.7e8ca708706a --database E2yWgPwLjaKkV4k9BMJtT4 --execute SELECT id, username, name, role, openId FROM users LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "username": "NULL",
+      "name": "MAGED SAEEL",
+      "role": "admin",
+      "openId": "42Hi3DHTU8LYEcPxaKFcTC"
+    },
+    {
+      "id": "180025",
+      "username": "mared",
+      "name": "مارد",
+      "role": "admin",
+      "openId": "local_mared"
+    },
+    {
+      "id": "180132",
+      "username": "maged",
+      "name": "maged saeel",
+      "role": "admin",
+      "openId": "local_maged"
+    },
+    {
+      "id": "900006",
+      "username": "adenbank",
+      "name": "ADEN BANK",
+      "role": "user",
+      "openId": "local_adenbank"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tname\trole\topenId\n1\tNULL\tMAGED SAEEL\tadmin\t42Hi3DHTU8LYEcPxaKFcTC\n180025\tmared\tمارد\tadmin\tlocal_mared\n180132\tmaged\tmaged saeel\tadmin\tlocal_maged\n900006\tadenbank\tADEN BANK\tuser\tlocal_adenbank\n",
+  "stderr": "",
+  "execution_time_ms": 603
+}
