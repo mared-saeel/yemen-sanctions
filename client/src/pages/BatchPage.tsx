@@ -30,7 +30,7 @@ interface BatchStats {
   averageScore: number;
 }
 
-export function BatchPage() {
+function BatchPage() {
   const { data: user } = trpc.auth.me.useQuery();
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BatchResult[]>([]);
@@ -258,3 +258,5 @@ export function BatchPage() {
     </div>
   );
 }
+
+export default BatchPage;
