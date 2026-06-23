@@ -341,20 +341,76 @@ export const appRouter = router({
 
   // ─── Batch Processing ────────────────────────────────────────────────────────
   batch: router({
-    process: adminProcedure
+    // Start a batch job (returns jobId immediately, processing happens in background)
+    start: protectedProcedure
       .input(z.object({
         names: z.array(z.string()).min(1).max(100),
       }))
       .mutation(async ({ ctx, input }) => {
         try {
-          // Process batch
+          const { createBatchJob, processJobInBackground } = await import("./batch-processor");
+          const jobId = createBatchJob(input.names);
+
+          // Start background processing (non-blocking)
+          processJobInBackground(jobId, input.names).then(async () => {
+            // Log the batch operation when done
+            const { getJob } = await import("./batch-processor");
+            const job = getJob(jobId);
+            if (job) {
+              await createAuditLog({
+                userId: ctx.user.id,
+                companyId: ctx.user.companyId ?? undefined,
+                userName: ctx.user.name ?? undefined,
+                action: "search",
+                query: `batch:${input.names.length}:names`,
+                resultsCount: job.matchCount,
+              });
+            }
+          });
+
+          return { jobId, total: input.names.length };
+        } catch (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error instanceof Error ? error.message : "Batch processing failed",
+          });
+        }
+      }),
+
+    // Poll job status and progress
+    status: protectedProcedure
+      .input(z.object({
+        jobId: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const { getJob, getBatchStatistics } = await import("./batch-processor");
+        const job = getJob(input.jobId);
+        if (!job) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found or expired" });
+        }
+        return {
+          jobId: job.id,
+          status: job.status,
+          progress: job.progress,
+          total: job.total,
+          processed: job.processed,
+          results: job.status === 'done' ? job.results : [],
+          stats: job.status === 'done' ? getBatchStatistics(job.results) : null,
+          error: job.error,
+        };
+      }),
+
+    // Legacy sync process (kept for backward compatibility)
+    process: protectedProcedure
+      .input(z.object({
+        names: z.array(z.string()).min(1).max(100),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
           const batchItems = input.names.map(name => ({ name }));
           const results = await processBatch(batchItems);
-
-          // Calculate statistics
           const stats = getBatchStatistics(results);
 
-          // Log the batch operation
           await createAuditLog({
             userId: ctx.user.id,
             companyId: ctx.user.companyId ?? undefined,

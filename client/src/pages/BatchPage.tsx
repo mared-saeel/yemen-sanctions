@@ -1,277 +1,567 @@
-import { useState, useRef } from 'react';
-import { trpc } from '@/lib/trpc';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Upload, Download, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { useState, useRef, useCallback, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Upload,
+  FileSpreadsheet,
+  X,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Download,
+  RotateCcw,
+  Loader2,
+  Shield,
+  Clock,
+  BarChart3,
+} from "lucide-react";
+import * as XLSX from "xlsx";
 
 interface BatchResult {
+  rowNumber: number;
   inputName: string;
-  status: 'MATCH' | 'POSSIBLE_MATCH' | 'NO_MATCH';
+  status: "MATCH" | "POSSIBLE_MATCH" | "NO_MATCH";
   matchScore: number;
   matchedRecord?: {
     id: string;
     name: string;
     nameArabic?: string | null;
+    entityType: string | null;
+    issuingBody: string | null;
+    listingDate: string | null;
     matchType: string;
   };
   error?: string;
 }
 
-interface BatchStats {
-  total: number;
-  matches: number;
-  possibleMatches: number;
-  noMatches: number;
-  errors: number;
-  matchRate: number;
-  possibleMatchRate: number;
-  averageScore: number;
-}
+type FilterStatus = "ALL" | "MATCH" | "POSSIBLE_MATCH" | "NO_MATCH";
 
 function BatchPage() {
-  const { data: user } = trpc.auth.me.useQuery();
-  const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [names, setNames] = useState<string[]>([]);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<BatchResult[]>([]);
-  const [stats, setStats] = useState<BatchStats | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [processed, setProcessed] = useState(0);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
+  const [stats, setStats] = useState<{
+    total: number;
+    matches: number;
+    possibleMatches: number;
+    noMatches: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const batchMutation = trpc.batch.process.useMutation({
-    onSuccess: (data) => {
-      setResults(data.results as BatchResult[]);
-      setStats(data.stats as BatchStats);
-      setLoading(false);
-    },
-    onError: (err) => {
-      setError(err.message || 'An error occurred during batch processing');
-      setLoading(false);
-    },
-  });
+  // tRPC mutations
+  const startBatch = trpc.batch.start.useMutation();
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Alert className="max-w-md">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>Please log in to use batch screening</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
+  // Poll for job status
+  const statusQuery = trpc.batch.status.useQuery(
+    { jobId: jobId || "" },
+    {
+      enabled: !!jobId && isProcessing,
+      refetchInterval: isProcessing ? 1000 : false,
+    }
+  );
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // Handle status updates
+  useEffect(() => {
+    if (statusQuery.data && jobId) {
+      const data = statusQuery.data;
+      setProgress(data.progress);
+      setProcessed(data.processed);
+      setTotal(data.total);
 
+      if (data.status === "done") {
+        setResults(data.results as BatchResult[]);
+        setStats(data.stats as any);
+        setIsProcessing(false);
+        setJobId(null);
+      } else if (data.status === "error") {
+        setError(data.error || "حدث خطأ أثناء المعالجة");
+        setIsProcessing(false);
+        setJobId(null);
+      }
+    }
+  }, [statusQuery.data, jobId]);
+
+  // Handle file selection
+  const handleFileSelect = useCallback(async (selectedFile: File) => {
+    setError(null);
+    setResults([]);
+    setStats(null);
+
+    // Validate file type
+    if (!selectedFile.name.match(/\.(xlsx|xls|csv)$/i)) {
+      setError("يرجى رفع ملف Excel (.xlsx, .xls) أو CSV");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setError("حجم الملف يتجاوز الحد الأقصى (5 ميجابايت)");
+      return;
+    }
+
+    setFile(selectedFile);
+
+    // Parse Excel file
     try {
-      setLoading(true);
-      setError(null);
-      setResults([]);
-      setStats(null);
-      setFileName(file.name);
+      const buffer = await selectedFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as unknown[][];
 
-      // Read Excel file
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { header: 1 });
-
-      // Extract names - skip header row, get first column
-      const names: string[] = [];
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i] as any[];
+      // Extract names from first column
+      const extractedNames: string[] = [];
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
         if (row && row[0]) {
-          const name = String(row[0]).trim();
-          if (name.length > 0) {
-            names.push(name);
+          const value = String(row[0]).trim();
+          if (value && value.length > 0) {
+            // Skip header row if it contains common header text
+            if (i === 0 && /^(name|اسم|الاسم|Name|NAME|#)$/i.test(value)) continue;
+            extractedNames.push(value);
           }
         }
       }
 
-      if (names.length === 0) {
-        setError('No valid names found in the file. Make sure the first column contains names.');
-        setLoading(false);
+      if (extractedNames.length === 0) {
+        setError("لم يتم العثور على أسماء في العمود الأول");
+        setFile(null);
         return;
       }
 
-      if (names.length > 100) {
-        setError(`File contains ${names.length} names. Maximum allowed is 100.`);
-        setLoading(false);
+      if (extractedNames.length > 100) {
+        setError(`الملف يحتوي على ${extractedNames.length} اسم. الحد الأقصى هو 100 اسم.`);
+        setFile(null);
         return;
       }
 
-      // Send to server via tRPC
-      batchMutation.mutate({ names });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to read the file. Please make sure it is a valid Excel file.');
-      setLoading(false);
+      setNames(extractedNames);
+    } catch {
+      setError("فشل في قراءة الملف. تأكد من أنه ملف Excel صالح.");
+      setFile(null);
     }
+  }, []);
 
-    // Reset file input so same file can be uploaded again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  // Handle drag and drop
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile) handleFileSelect(droppedFile);
+    },
+    [handleFileSelect]
+  );
+
+  // Start batch processing
+  const handleStartProcessing = async () => {
+    if (names.length === 0) return;
+
+    setIsProcessing(true);
+    setProgress(0);
+    setProcessed(0);
+    setTotal(names.length);
+    setResults([]);
+    setStats(null);
+    setError(null);
+
+    try {
+      const result = await startBatch.mutateAsync({ names });
+      setJobId(result.jobId);
+      setTotal(result.total);
+    } catch (err: any) {
+      setError(err.message || "فشل في بدء المعالجة");
+      setIsProcessing(false);
     }
   };
 
+  // Reset
+  const handleReset = () => {
+    setFile(null);
+    setNames([]);
+    setResults([]);
+    setStats(null);
+    setProgress(0);
+    setProcessed(0);
+    setTotal(0);
+    setError(null);
+    setJobId(null);
+    setIsProcessing(false);
+    setFilterStatus("ALL");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Export results to Excel
   const handleExport = () => {
     if (results.length === 0) return;
 
-    const exportData = results.map((r) => ({
-      'Input Name': r.inputName,
-      'Status': r.status,
-      'Match Score': `${r.matchScore}%`,
-      'Matched Name': r.matchedRecord?.name || '',
-      'Matched Name (Arabic)': r.matchedRecord?.nameArabic || '',
-      'Match Type': r.matchedRecord?.matchType || '',
-      'Error': r.error || '',
+    const exportData = results.map((r, idx) => ({
+      "#": idx + 1,
+      "الاسم المقدم / Submitted Name": r.inputName,
+      "الحالة / Status": r.status === "MATCH" ? "مطابقة / MATCH" : r.status === "POSSIBLE_MATCH" ? "احتمالية تطابق / POSSIBLE MATCH" : "غير مطابق / NO MATCH",
+      "نسبة التطابق / Match Score (%)": r.matchScore,
+      "الاسم المطابق (EN)": r.matchedRecord?.name || "—",
+      "الاسم المطابق (AR)": r.matchedRecord?.nameArabic || "—",
+      "نوع الكيان / Entity Type": r.matchedRecord?.entityType || "—",
+      "الجهة المصدرة / Issuing Body": r.matchedRecord?.issuingBody || "—",
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Results');
-    XLSX.writeFile(workbook, `batch-results-${new Date().toISOString().split('T')[0]}.xlsx`);
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Batch Results");
+    XLSX.writeFile(wb, `batch-screening-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  // Filter results
+  const filteredResults = filterStatus === "ALL"
+    ? results
+    : results.filter(r => r.status === filterStatus);
+
+  // Status badge component
+  const StatusBadge = ({ status }: { status: string }) => {
+    switch (status) {
+      case "MATCH":
+        return (
+          <Badge className="bg-red-100 text-red-800 border-red-200 gap-1 font-semibold">
+            <CheckCircle2 className="w-3 h-3" />
+            مطابقة
+          </Badge>
+        );
+      case "POSSIBLE_MATCH":
+        return (
+          <Badge className="bg-amber-100 text-amber-800 border-amber-200 gap-1 font-semibold">
+            <AlertTriangle className="w-3 h-3" />
+            احتمالية تطابق
+          </Badge>
+        );
+      default:
+        return (
+          <Badge className="bg-green-100 text-green-800 border-green-200 gap-1 font-semibold">
+            <XCircle className="w-3 h-3" />
+            غير مطابق
+          </Badge>
+        );
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Batch Screening</h1>
-          <p className="text-muted-foreground">Upload an Excel file with up to 100 names for batch processing</p>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" dir="rtl">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Shield className="w-7 h-7 text-primary" />
+            الفحص الجماعي
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            رفع ملف Excel يحتوي على أسماء للفحص ضد قوائم العقوبات (حد أقصى 100 اسم)
+          </p>
         </div>
-
-        {/* Upload Section */}
-        <Card className="p-8 mb-8">
-          <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:bg-accent/50 transition"
-            onClick={() => !loading && fileInputRef.current?.click()}
-          >
-            <Upload className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-lg font-semibold text-foreground mb-2">Upload Excel File</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              {fileName ? `Selected: ${fileName}` : 'Click to select or drag and drop (.xlsx, .xls, .csv)'}
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              onChange={handleFileUpload}
-              disabled={loading}
-              className="hidden"
-            />
-            <Button disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                'Select File'
-              )}
+        {results.length > 0 && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} className="gap-1">
+              <Download className="w-4 h-4" />
+              تصدير Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleReset} className="gap-1">
+              <RotateCcw className="w-4 h-4" />
+              فحص جديد
             </Button>
           </div>
-        </Card>
-
-        {/* Error Alert */}
-        {error && (
-          <Alert variant="destructive" className="mb-8">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
         )}
+      </div>
 
-        {/* Statistics */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">Total Items</div>
-              <div className="text-2xl font-bold text-foreground">{stats.total}</div>
-            </Card>
-            <Card className="p-4 border-green-200 bg-green-50">
-              <div className="text-sm text-green-700 mb-1">Matches</div>
-              <div className="text-2xl font-bold text-green-700">{stats.matches}</div>
-              <div className="text-xs text-green-600 mt-1">{stats.matchRate}%</div>
-            </Card>
-            <Card className="p-4 border-yellow-200 bg-yellow-50">
-              <div className="text-sm text-yellow-700 mb-1">Possible Matches</div>
-              <div className="text-2xl font-bold text-yellow-700">{stats.possibleMatches}</div>
-              <div className="text-xs text-yellow-600 mt-1">{stats.possibleMatchRate}%</div>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">Average Score</div>
-              <div className="text-2xl font-bold text-foreground">{stats.averageScore}%</div>
-            </Card>
-          </div>
-        )}
+      {/* Upload Section */}
+      {!isProcessing && results.length === 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            {/* Drop Zone */}
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer
+                ${file ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/50 hover:bg-muted/50"}`}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFileSelect(f);
+                }}
+              />
 
-        {/* Results Table */}
-        {results.length > 0 && (
-          <>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-foreground">Results ({results.length})</h2>
-              <Button onClick={handleExport} variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                Export Results
-              </Button>
+              {!file ? (
+                <div className="space-y-3">
+                  <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
+                  <div>
+                    <p className="text-lg font-medium">اسحب الملف هنا أو اضغط للاختيار</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      يدعم ملفات Excel (.xlsx, .xls) و CSV — العمود الأول يجب أن يحتوي على الأسماء
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <FileSpreadsheet className="w-12 h-12 mx-auto text-primary" />
+                  <div>
+                    <p className="text-lg font-medium text-primary">{file.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {names.length} اسم جاهز للفحص • {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReset();
+                    }}
+                  >
+                    <X className="w-4 h-4 ml-1" />
+                    إزالة
+                  </Button>
+                </div>
+              )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Error */}
+            {error && (
+              <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <p className="text-sm">{error}</p>
+              </div>
+            )}
+
+            {/* Start Button */}
+            {file && names.length > 0 && !error && (
+              <div className="mt-6 flex justify-center">
+                <Button
+                  size="lg"
+                  onClick={handleStartProcessing}
+                  className="gap-2 px-8"
+                >
+                  <Shield className="w-5 h-5" />
+                  بدء الفحص ({names.length} اسم)
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Processing Progress */}
+      {isProcessing && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-6">
+              {/* Progress Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <div>
+                    <p className="font-semibold text-lg">جاري الفحص...</p>
+                    <p className="text-sm text-muted-foreground">
+                      يتم فحص الأسماء ضد قوائم العقوبات الدولية
+                    </p>
+                  </div>
+                </div>
+                <div className="text-left">
+                  <p className="text-2xl font-bold text-primary">{progress}%</p>
+                  <p className="text-xs text-muted-foreground">
+                    {processed} / {total}
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-2">
+                <Progress value={progress} className="h-3" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    الوقت المتوقع: ~{Math.max(1, Math.ceil((total - processed) * 0.2))} ثانية
+                  </span>
+                  <span>{processed} من {total} اسم تم فحصه</span>
+                </div>
+              </div>
+
+              {/* Animated dots */}
+              <div className="flex justify-center gap-1">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="w-2 h-2 rounded-full bg-primary animate-pulse"
+                    style={{ animationDelay: `${i * 0.3}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Results Section */}
+      {results.length > 0 && stats && (
+        <>
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="border-r-4 border-r-blue-500">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">إجمالي الأسماء</p>
+                    <p className="text-2xl font-bold">{stats.total}</p>
+                  </div>
+                  <BarChart3 className="w-8 h-8 text-blue-500 opacity-50" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-r-4 border-r-red-500">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">مطابقة</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.matches}</p>
+                  </div>
+                  <CheckCircle2 className="w-8 h-8 text-red-500 opacity-50" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-r-4 border-r-amber-500">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">احتمالية تطابق</p>
+                    <p className="text-2xl font-bold text-amber-600">{stats.possibleMatches}</p>
+                  </div>
+                  <AlertTriangle className="w-8 h-8 text-amber-500 opacity-50" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-r-4 border-r-green-500">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">غير مطابق</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.noMatches}</p>
+                  </div>
+                  <XCircle className="w-8 h-8 text-green-500 opacity-50" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filter Tabs */}
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { key: "ALL" as FilterStatus, label: "الكل", count: results.length },
+              { key: "MATCH" as FilterStatus, label: "مطابقة", count: stats.matches },
+              { key: "POSSIBLE_MATCH" as FilterStatus, label: "احتمالية", count: stats.possibleMatches },
+              { key: "NO_MATCH" as FilterStatus, label: "غير مطابق", count: stats.noMatches },
+            ].map((tab) => (
+              <Button
+                key={tab.key}
+                variant={filterStatus === tab.key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterStatus(tab.key)}
+                className="gap-1"
+              >
+                {tab.label}
+                <Badge variant="secondary" className="mr-1 text-xs">
+                  {tab.count}
+                </Badge>
+              </Button>
+            ))}
+          </div>
+
+          {/* Results Table */}
+          <Card>
+            <CardContent className="pt-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-muted">
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">#</th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">Input Name</th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">Status</th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">Score</th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">Matched Name</th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground">Type</th>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-right p-3 font-semibold">#</th>
+                    <th className="text-right p-3 font-semibold">الاسم المقدم</th>
+                    <th className="text-center p-3 font-semibold">الحالة</th>
+                    <th className="text-center p-3 font-semibold">النسبة</th>
+                    <th className="text-right p-3 font-semibold">الاسم المطابق</th>
+                    <th className="text-right p-3 font-semibold">الجهة</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((result, index) => (
-                    <tr key={index} className="border-b border-border hover:bg-muted/50">
-                      <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">{result.inputName}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {result.status === 'MATCH' && (
-                            <>
-                              <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              <span className="text-green-600 font-semibold">Match</span>
-                            </>
-                          )}
-                          {result.status === 'POSSIBLE_MATCH' && (
-                            <>
-                              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                              <span className="text-yellow-600 font-semibold">Possible</span>
-                            </>
-                          )}
-                          {result.status === 'NO_MATCH' && (
-                            <span className="text-muted-foreground">No Match</span>
-                          )}
-                        </div>
+                  {filteredResults.map((result, idx) => (
+                    <tr
+                      key={idx}
+                      className={`border-b hover:bg-muted/30 transition-colors ${
+                        result.status === "MATCH"
+                          ? "bg-red-50/50 dark:bg-red-950/20"
+                          : result.status === "POSSIBLE_MATCH"
+                          ? "bg-amber-50/50 dark:bg-amber-950/20"
+                          : ""
+                      }`}
+                    >
+                      <td className="p-3 text-muted-foreground">{result.rowNumber}</td>
+                      <td className="p-3 font-medium">{result.inputName}</td>
+                      <td className="p-3 text-center">
+                        <StatusBadge status={result.status} />
                       </td>
-                      <td className="px-4 py-3 font-semibold text-foreground">{result.matchScore}%</td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <div className="text-foreground">{result.matchedRecord?.name}</div>
-                          {result.matchedRecord?.nameArabic && (
-                            <div className="text-sm text-muted-foreground">{result.matchedRecord.nameArabic}</div>
-                          )}
-                        </div>
+                      <td className="p-3 text-center">
+                        {result.matchScore > 0 ? (
+                          <span className={`font-bold ${
+                            result.matchScore >= 85 ? "text-red-600" :
+                            result.matchScore >= 70 ? "text-amber-600" : "text-muted-foreground"
+                          }`}>
+                            {result.matchScore}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{result.matchedRecord?.matchType}</td>
+                      <td className="p-3">
+                        {result.matchedRecord ? (
+                          <div>
+                            <p className="font-medium text-xs">{result.matchedRecord.name}</p>
+                            {result.matchedRecord.nameArabic && (
+                              <p className="text-xs text-muted-foreground">{result.matchedRecord.nameArabic}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">
+                        {result.matchedRecord?.issuingBody || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
-      </div>
+
+              {filteredResults.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  لا توجد نتائج تطابق الفلتر المحدد
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

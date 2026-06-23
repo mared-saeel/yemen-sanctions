@@ -297,6 +297,14 @@ Detected
 - [x] حفظ checkpoint (b71d019f)
 
 
+## Phase 37: إصلاح دقة البحث في الباتش وتحسين الواجهة
+- [ ] Fix batch search accuracy - false positives like "ماجد عبدالخالق" matching "ДЕНИС МАЙДАНОВ"
+- [ ] Implement proper classification thresholds: MATCH >= 85%, POSSIBLE_MATCH 60-84%, NO_MATCH < 60%
+- [ ] Add real-time progress bar for batch processing
+- [ ] Improve BatchPage UI to look more professional
+- [ ] Ensure batch uses same search engine as single search
+- [ ] Test with user's Excel file and verify accuracy
+
 ## Phase 36: خاصية تعديل البيانات للإدمن
 
 - [ ] إنشاء صفحة تعديل البيانات
