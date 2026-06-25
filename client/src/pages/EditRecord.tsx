@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import { Loader2, ArrowLeft, Save } from "lucide-react";
 
 export default function EditRecord() {
   const { id } = useParams<{ id: string }>();
-  const [, navigate] = useRouter() as any;
+  const [, navigate] = useLocation();
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
