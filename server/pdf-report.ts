@@ -372,7 +372,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Created & Screened", X + 5, y + 5, mLW);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr} ${timeStr}`, X + mLW + 3, y + 5, mCW - mLW - 8);
+    enText(doc, dateStr, X + mLW + 3, y + 5, mCW - mLW - 8);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Printed By", X + 5, y + 19, mLW);
@@ -383,7 +383,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Date Printed", X + mCW + 5, y + 5, 85);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr}, ${timeStr}`, X + mCW + 90, y + 5, mCW - 94);
+    enText(doc, dateStr, X + mCW + 90, y + 5, mCW - 94);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Assigned To", X + mCW + 5, y + 19, 85);
@@ -644,35 +644,69 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     }
     // -- NOTES ---------------------------------------------------------------------------
     if (mergedNotes) {
+      // إضافة صفحة جديدة إذا لم يكن هناك مساحة كافية
+      if (y + 60 > PH - 80) {
+        doc.addPage();
+        y = 40;
+      }
       y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
-      const noteSz = 8;
-      const noteW = W - 10;
-      const hasArNotes = /[\u0600-\u06FF]/.test(mergedNotes);
-      const arCharsN = (mergedNotes.match(/[\u0600-\u06FF]/g) || []).length;
-      const enLettersN = (mergedNotes.match(/[a-zA-Z]/g) || []).length;
-      const arDomN = hasArNotes && arCharsN > enLettersN;
-      // احسب ارتفاع النص مسبقاً باستخدام heightOfString
-      let noteTextH: number;
-      if (arDomN) {
-        doc.font(FONT_AR).fontSize(noteSz);
-        noteTextH = (doc as any).heightOfString(mergedNotes, { align: "right", features: AR_FEAT, width: noteW });
-      } else {
-        doc.font(FONT_EN).fontSize(noteSz);
-        noteTextH = doc.heightOfString(mergedNotes, { align: "left", width: noteW });
+      const noteSz = 8.5;
+      const noteW = W - 20;
+      const noteLines = mergedNotes.split('\n').filter(l => l.trim());
+      const lineH = noteSz + 6;
+
+      for (let li = 0; li < noteLines.length; li++) {
+        const line = noteLines[li].trim();
+        if (!line) continue;
+
+        // احسب عدد الأسطر الفعلية لهذا السطر (قد يلتف)
+        const hasArLine = /[\u0600-\u06FF]/.test(line);
+        const arCharsLine = (line.match(/[\u0600-\u06FF]/g) || []).length;
+        const enLettersLine = (line.match(/[a-zA-Z]/g) || []).length;
+        const arDomLine = hasArLine && arCharsLine > enLettersLine;
+        const mixedLine = hasArLine && !arDomLine;
+
+        let wrappedH: number;
+        if (arDomLine) {
+          doc.font(FONT_AR).fontSize(noteSz);
+          wrappedH = (doc as any).heightOfString(line, { align: "right", features: AR_FEAT, width: noteW });
+        } else if (mixedLine) {
+          // للنص المختلط نقدّر ارتفاعاً بناءً على الطول
+          doc.font(FONT_EN).fontSize(noteSz);
+          wrappedH = doc.heightOfString(line, { align: "left", width: noteW });
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz);
+          wrappedH = doc.heightOfString(line, { align: "left", width: noteW });
+        }
+        const rowH = Math.max(wrappedH + 10, lineH);
+
+        // صفحة جديدة إذا لزم
+        if (y + rowH > PH - 80) {
+          doc.addPage();
+          y = 40;
+          y = sectionHead(doc, "NOTES / ملاحظات (تابع)", X, y, W);
+        }
+
+        // خلفية متناوبة
+        doc.save().rect(X, y, W, rowH).fill(li % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
+
+        // رسم النص مع الخط الصحيح
+        if (arDomLine) {
+          doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
+          (doc as any).text(line, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+        } else if (mixedLine) {
+          // نص مختلط: استخدم renderMixedRTL لكل سطر
+          // لكن مع دعم التفاف السطور نستخدم FONT_AR مع lineBreak
+          doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
+          (doc as any).text(line, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
+          doc.text(line, X + 5, y + 5, { align: "left", width: noteW, lineBreak: true });
+        }
+        y += rowH;
       }
-      const noteH = noteTextH + 16;
-      // ارسم الخلفية والحدود
-      doc.save().rect(X, y, W, noteH).fill(GRAY_ROW).restore();
-      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, noteH).stroke().restore();
-      // ارسم النص
-      if (arDomN) {
-        doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-        (doc as any).text(mergedNotes, X + 5, y + 8, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
-      } else {
-        doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
-        doc.text(mergedNotes, X + 5, y + 8, { align: "left", width: noteW, lineBreak: true });
-      }
-      y += noteH + 14;
+      y += 14;
     }
 
     // -- FOOTER -- draw at absolute position at bottom of page --
