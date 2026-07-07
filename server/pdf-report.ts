@@ -372,7 +372,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Created & Screened", X + 5, y + 5, mLW);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr} ${timeStr}`, X + mLW + 3, y + 5, mCW - mLW - 8);
+    enText(doc, dateStr, X + mLW + 3, y + 5, mCW - mLW - 8);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Printed By", X + 5, y + 19, mLW);
@@ -383,7 +383,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Date Printed", X + mCW + 5, y + 5, 85);
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
-    enText(doc, `${dateStr}, ${timeStr}`, X + mCW + 90, y + 5, mCW - 94);
+    enText(doc, dateStr, X + mCW + 90, y + 5, mCW - 94);
 
     doc.font(FONT_EN_B).fontSize(metaSz).fillColor(BLACK);
     enText(doc, "Assigned To", X + mCW + 5, y + 19, 85);
@@ -468,10 +468,6 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       ["Category",      record.entityType ? (typeMap[record.entityType] || record.entityType) : "—"],
       ["Sub-Category",  record.entityType === "individual" ? "Individual" : (record.entityType || "—")],
       ["Name",          record.nameEn || record.nameAr || "—"],
-      ["Gender",        "—"],
-      ["Citizenship",   record.nationality || "—"],
-      ["Date of Birth", record.dateOfBirth || "—"],
-      ["Place of Birth",record.placeOfBirth || "—"],
       ["Listing Date",  record.listingDate || "—"],
       ["Issuing Body",  record.issuingBody || "—"],
     ];
@@ -572,9 +568,6 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- ADDITIONAL INFORMATION ------------------------------------------------
     const addlRows: [string, string][] = [
-      ["Nationality", mergedNationality || "—"],
-      ["Date of Birth", mergedDob || "—"],
-      ["Place of Birth", mergedPob || "—"],
       ["Reference Number", mergedRef || "—"],
       ["Action Taken", record.actionTaken || "—"],
     ].filter(([, v]) => v && v !== "—") as [string, string][];
@@ -643,36 +636,98 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       y += 14;
     }
     // -- NOTES ---------------------------------------------------------------------------
-    if (mergedNotes) {
+    // جلب الملاحظات الكاملة من قاعدة البيانات (عمود notes)
+    const fullNotes = record.notes || mergedNotes;
+    if (fullNotes) {
+      // التحقق من وجود مساحة كافية في الصفحة الحالية
+      if (y + 60 > PH - 90) {
+        doc.addPage();
+        y = 40;
+      }
       y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
-      const noteSz = 8;
-      const noteW = W - 10;
-      const hasArNotes = /[\u0600-\u06FF]/.test(mergedNotes);
-      const arCharsN = (mergedNotes.match(/[\u0600-\u06FF]/g) || []).length;
-      const enLettersN = (mergedNotes.match(/[a-zA-Z]/g) || []).length;
+      const noteSz = 8.5;
+      const noteW = W - 20;
+      const hasArNotes = /[\u0600-\u06FF]/.test(fullNotes);
+      const arCharsN = (fullNotes.match(/[\u0600-\u06FF]/g) || []).length;
+      const enLettersN = (fullNotes.match(/[a-zA-Z]/g) || []).length;
       const arDomN = hasArNotes && arCharsN > enLettersN;
-      // احسب ارتفاع النص مسبقاً باستخدام heightOfString
-      let noteTextH: number;
-      if (arDomN) {
-        doc.font(FONT_AR).fontSize(noteSz);
-        noteTextH = (doc as any).heightOfString(mergedNotes, { align: "right", features: AR_FEAT, width: noteW });
-      } else {
-        doc.font(FONT_EN).fontSize(noteSz);
-        noteTextH = doc.heightOfString(mergedNotes, { align: "left", width: noteW });
+
+      // تقسيم الملاحظات إلى أسطر للتعامل مع الصفحات المتعددة
+      const noteLines = fullNotes.split('\n');
+      const pageBottomLimit = PH - 90;
+
+      // رسم خلفية البداية
+      let noteStartY = y;
+      let noteCurrentY = y + 10;
+
+      for (let li = 0; li < noteLines.length; li++) {
+        const line = noteLines[li].trim();
+        if (!line) { noteCurrentY += 6; continue; }
+
+        // احسب ارتفاع هذا السطر
+        let lineH: number;
+        if (arDomN || /[\u0600-\u06FF]/.test(line)) {
+          doc.font(FONT_AR).fontSize(noteSz);
+          lineH = (doc as any).heightOfString(line, { align: "right", features: AR_FEAT, width: noteW }) + 4;
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz);
+          lineH = doc.heightOfString(line, { align: "left", width: noteW }) + 4;
+        }
+
+        // إذا تجاوزنا حد الصفحة، أضف صفحة جديدة
+        if (noteCurrentY + lineH > pageBottomLimit) {
+          // ارسم الخلفية للجزء الحالي
+          const segH = noteCurrentY - noteStartY + 6;
+          doc.save().rect(X, noteStartY, W, segH).fill(GRAY_ROW).restore();
+          doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, noteStartY, W, segH).stroke().restore();
+
+          doc.addPage();
+          noteStartY = 40;
+          noteCurrentY = 50;
+        }
+
+        // ارسم النص
+        const lineIsAr = /[\u0600-\u06FF]/.test(line);
+        if (lineIsAr) {
+          doc.font(FONT_AR).fontSize(noteSz).fillColor(BLACK);
+          (doc as any).text(line, X + 10, noteCurrentY, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz).fillColor(BLACK);
+          doc.text(line, X + 10, noteCurrentY, { align: "left", width: noteW, lineBreak: true });
+        }
+        noteCurrentY += lineH;
       }
-      const noteH = noteTextH + 16;
-      // ارسم الخلفية والحدود
-      doc.save().rect(X, y, W, noteH).fill(GRAY_ROW).restore();
-      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, noteH).stroke().restore();
-      // ارسم النص
-      if (arDomN) {
-        doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-        (doc as any).text(mergedNotes, X + 5, y + 8, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
-      } else {
-        doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
-        doc.text(mergedNotes, X + 5, y + 8, { align: "left", width: noteW, lineBreak: true });
+
+      // ارسم الخلفية والحدود للجزء الأخير
+      const finalSegH = noteCurrentY - noteStartY + 10;
+      doc.save().rect(X, noteStartY, W, finalSegH).fill(GRAY_ROW).restore();
+      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, noteStartY, W, finalSegH).stroke().restore();
+
+      // أعد رسم النص فوق الخلفية (لأن الخلفية رُسمت بعد النص)
+      noteCurrentY = noteStartY + 10;
+      for (let li = 0; li < noteLines.length; li++) {
+        const line = noteLines[li].trim();
+        if (!line) { noteCurrentY += 6; continue; }
+        let lineH: number;
+        if (arDomN || /[\u0600-\u06FF]/.test(line)) {
+          doc.font(FONT_AR).fontSize(noteSz);
+          lineH = (doc as any).heightOfString(line, { align: "right", features: AR_FEAT, width: noteW }) + 4;
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz);
+          lineH = doc.heightOfString(line, { align: "left", width: noteW }) + 4;
+        }
+        const lineIsAr = /[\u0600-\u06FF]/.test(line);
+        if (lineIsAr) {
+          doc.font(FONT_AR).fontSize(noteSz).fillColor(BLACK);
+          (doc as any).text(line, X + 10, noteCurrentY, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+        } else {
+          doc.font(FONT_EN).fontSize(noteSz).fillColor(BLACK);
+          doc.text(line, X + 10, noteCurrentY, { align: "left", width: noteW, lineBreak: true });
+        }
+        noteCurrentY += lineH;
       }
-      y += noteH + 14;
+
+      y = noteCurrentY + 14;
     }
 
     // -- FOOTER -- draw at absolute position at bottom of page --
