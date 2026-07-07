@@ -178,10 +178,33 @@ function parseRawNotesForPdf(raw: string | null | undefined) {
   };
 }
 
-/** Section heading — bold uppercase */
+/** Section heading — bold uppercase.
+ * If the title contains Arabic characters, the Arabic part is rendered with FONT_AR_B
+ * and the English part with FONT_EN_B so no boxes appear.
+ */
 function sectionHead(doc: PDFKit.PDFDocument, title: string, x: number, y: number, w: number): number {
-  doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
-  enText(doc, title, x, y, w);
+  const hasArabic = /[\u0600-\u06FF]/.test(title);
+  if (hasArabic) {
+    // Split on " / " separator: e.g. "NOTES / ملاحظات" → ["NOTES", "ملاحظات"]
+    const parts = title.split(' / ');
+    if (parts.length === 2) {
+      const enPart = parts[0].trim();
+      const arPart = parts[1].trim();
+      // Render English part left-aligned
+      doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
+      doc.text(enPart, x, y, { align: 'left', width: w / 2, lineBreak: false });
+      // Render Arabic part right-aligned
+      doc.font(FONT_AR_B).fontSize(9.5).fillColor(BLACK);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc as any).text(arPart, x + w / 2, y, { align: 'right', features: AR_FEAT, width: w / 2, lineBreak: false });
+    } else {
+      // Fallback: render whole title with mixed renderer
+      renderMixedRTL(doc, title, x, y, w, 9.5, BLACK);
+    }
+  } else {
+    doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
+    enText(doc, title, x, y, w);
+  }
   return y + 16;
 }
 
@@ -684,7 +707,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         if (y + rowH > PH - 80) {
           doc.addPage();
           y = 40;
-          y = sectionHead(doc, "NOTES / ملاحظات (تابع)", X, y, W);
+          y = sectionHead(doc, "NOTES (cont.) / ملاحظات", X, y, W);
         }
 
         // خلفية متناوبة
