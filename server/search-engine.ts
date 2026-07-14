@@ -489,10 +489,23 @@ function scoreRecord(
   }
 
   // 2. Contains match (bidirectional: query in name OR name in query)
-  // This handles both "BARASH AVIATION" matching "BARASH AVIATION AND CARGO COMPANY LIMITED"
-  // AND "BARASH AVIATION AND CARGO COMPANY LIMITED" matching itself
-  const queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
-  const nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
+  // LANGUAGE-AWARE: If query is Arabic, only search in Arabic names. If English, only in English names.
+  let queryInName = false;
+  let nameInQuery = false;
+  
+  if (queryIsArabicLang && !queryIsEnglishLang) {
+    // Arabic query: only search in Arabic names
+    queryInName = nNameAr.includes(nQuery);
+    nameInQuery = nQuery.includes(nNameAr);
+  } else if (queryIsEnglishLang && !queryIsArabicLang) {
+    // English query: only search in English names
+    queryInName = nNameEn.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
+    nameInQuery = nQuery.includes(nNameEn) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
+  } else {
+    // Mixed or unknown: search in both
+    queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
+    nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
+  }
   
   if (queryInName || nameInQuery) {
     // If it's a bidirectional match (name contains query AND query contains name = exact match)
@@ -511,21 +524,43 @@ function scoreRecord(
   }
 
   // 3. Token-based similarity (one-directional)
-  const enTokenScore = Math.max(
-    tokenSimilarity(query, record.nameEn || ""),
-    tokenSimilarity(rawQuery, rawNameEn),
-    tokenSimilarity(searchQuery, searchNameEn)
-  );
-  const arTokenScore = tokenSimilarity(query, record.nameAr || "");
+  // LANGUAGE-AWARE: Only compare with matching language names
+  let enTokenScore = 0;
+  let arTokenScore = 0;
+  
+  if (!queryIsArabicLang || queryIsEnglishLang) {
+    // English query or mixed: can use English names
+    enTokenScore = Math.max(
+      tokenSimilarity(query, record.nameEn || ""),
+      tokenSimilarity(rawQuery, rawNameEn),
+      tokenSimilarity(searchQuery, searchNameEn)
+    );
+  }
+  
+  if (!queryIsEnglishLang || queryIsArabicLang) {
+    // Arabic query or mixed: can use Arabic names
+    arTokenScore = tokenSimilarity(query, record.nameAr || "");
+  }
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
 
   // 3b. Bidirectional token score (handles different word order)
-  const biEn = Math.max(
-    bidirectionalTokenScore(query, record.nameEn || ""),
-    bidirectionalTokenScore(rawQuery, rawNameEn),
-    bidirectionalTokenScore(searchQuery, searchNameEn)
-  );
-  const biAr = bidirectionalTokenScore(query, record.nameAr || "");
+  // LANGUAGE-AWARE: Only compare with matching language names
+  let biEn = 0;
+  let biAr = 0;
+  
+  if (!queryIsArabicLang || queryIsEnglishLang) {
+    // English query or mixed: can use English names
+    biEn = Math.max(
+      bidirectionalTokenScore(query, record.nameEn || ""),
+      bidirectionalTokenScore(rawQuery, rawNameEn),
+      bidirectionalTokenScore(searchQuery, searchNameEn)
+    );
+  }
+  
+  if (!queryIsEnglishLang || queryIsArabicLang) {
+    // Arabic query or mixed: can use Arabic names
+    biAr = bidirectionalTokenScore(query, record.nameAr || "");
+  }
   const biAlt = Math.max(0, ...altNames.map((n) => bidirectionalTokenScore(query, n)));
 
   // 3c. Transliteration-based token similarity (Arabic query vs English name)

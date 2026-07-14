@@ -1,15 +1,23 @@
-import { db } from './server/db.ts';
-import { sanctionsRecords } from './drizzle/schema.ts';
+import { getDb } from './server/db';
+import { sanctionsRecords } from './drizzle/schema';
 
-// فحص أول 10 سجلات
-const records = await db.select().from(sanctionsRecords).limit(10);
+const db = await getDb();
+if (!db) throw new Error('DB not available');
 
-console.log('\nفحص بيانات السجلات:');
-console.log('='.repeat(80));
+// البحث عن سجلات تحتوي على "علي" في nameAr
+const records = await db.select().from(sanctionsRecords).where((t) => t.nameAr && t.nameAr.includes('علي')).limit(5);
 
-for (const record of records) {
-  console.log(`\nID: ${record.id}`);
-  console.log(`nameEn: ${record.nameEn?.substring(0, 50) || 'NULL'}`);
-  console.log(`nameAr: ${record.nameAr?.substring(0, 50) || 'NULL'}`);
-  console.log(`alternativeNames: ${record.alternativeNames ? JSON.stringify(record.alternativeNames).substring(0, 50) : 'NULL'}`);
+console.log('\nسجلات تحتوي على "علي" في nameAr:');
+records.forEach((r) => {
+  console.log(`- ${r.nameAr?.substring(0, 50)}`);
+});
+
+// البحث عن السجل الذي يعطي مطابقة "ALI DAWWA"
+const aliRecords = await db.select().from(sanctionsRecords).where((t) => t.nameEn && t.nameEn.includes('ALI DAWWA')).limit(1);
+
+if (aliRecords.length > 0) {
+  const r = aliRecords[0];
+  console.log('\nسجل "ALI DAWWA":');
+  console.log('nameEn:', r.nameEn?.substring(0, 80));
+  console.log('nameAr:', r.nameAr?.substring(0, 80));
 }
