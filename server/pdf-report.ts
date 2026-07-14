@@ -15,10 +15,12 @@ import { createContext } from "./_core/context";
 const __filename = fileURLToPath(import.meta.url);
 const __dir = path.dirname(__filename);
 const FONTS_DIR = path.join(__dir, "fonts");
-const FONT_AR   = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
-const FONT_AR_B = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
-const FONT_EN   = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
-const FONT_EN_B = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
+const FONT_AR     = path.join(FONTS_DIR, "NotoSansArabic-Regular.ttf");
+const FONT_AR_B   = path.join(FONTS_DIR, "NotoSansArabic-Bold.ttf");
+const FONT_EN     = path.join(FONTS_DIR, "NotoSans-Regular.ttf");
+const FONT_EN_B   = path.join(FONTS_DIR, "NotoSans-Bold.ttf");
+// Cairo supports both Arabic and Latin/digits — used for mixed-language text
+const FONT_MIXED  = path.join(FONTS_DIR, "Cairo-Regular.ttf");
 const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -586,7 +588,17 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const mergedDob = record.dateOfBirth || parsed.dateOfBirth;
     const mergedPob = record.placeOfBirth || parsed.placeOfBirth;
     const mergedRef = record.referenceNumber || parsed.referenceNumber;
-    const mergedNotes = record.notes || parsed.notes;
+    // Use notes field, or parsed notes from rawNotes
+    // If rawNotes doesn't contain structured keys (like "الجنسية:"), use it directly as notes
+    let mergedNotes = record.notes || parsed.notes;
+    if (!mergedNotes && record.rawNotes) {
+      const knownStructuredKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:', 'ملاحظات:'];
+      const isStructured = knownStructuredKeys.some(k => record.rawNotes!.includes(k));
+      if (!isStructured) {
+        // rawNotes is free-form text — use it directly as notes
+        mergedNotes = record.rawNotes;
+      }
+    }
     const dbAltArr = (record.alternativeNames as string[] | null) || [];
     const allAltNames = Array.from(new Set([...dbAltArr, ...parsed.alternativeNames]));
 
@@ -678,56 +690,90 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       const noteLines = mergedNotes.split('\n').filter(l => l.trim());
       const lineH = noteSz + 6;
 
+      // Helper: measure width of a word (Arabic or English)
+      const wordWidth = (word: string, sz: number): number => {
+        const arChars = (word.match(/[\u0600-\u06FF]/g) || []).length;
+        const enChars = (word.match(/[a-zA-Z0-9]/g) || []).length;
+        const isAr = arChars > 0;
+        doc.font(isAr ? FONT_AR : FONT_EN).fontSize(sz);
+        return doc.widthOfString(word) + 4;
+      };
+
+      // Helper: split a long mixed text into visual lines that fit within maxW
+      const wrapMixedToLines = (text: string, sz: number, maxW: number): string[] => {
+        const words = text.split(' ').filter(Boolean);
+        const lines: string[] = [];
+        let current = '';
+        let currentW = 0;
+        for (const word of words) {
+          const wW = wordWidth(word, sz) + 4; // +4 for space
+          if (current === '') {
+            current = word;
+            currentW = wW;
+          } else if (currentW + wW <= maxW) {
+            current += ' ' + word;
+            currentW += wW;
+          } else {
+            lines.push(current);
+            current = word;
+            currentW = wW;
+          }
+        }
+        if (current) lines.push(current);
+        return lines.length > 0 ? lines : [text];
+      };
+
       for (let li = 0; li < noteLines.length; li++) {
         const line = noteLines[li].trim();
         if (!line) continue;
 
-        // احسب عدد الأسطر الفعلية لهذا السطر (قد يلتف)
         const hasArLine = /[\u0600-\u06FF]/.test(line);
         const arCharsLine = (line.match(/[\u0600-\u06FF]/g) || []).length;
         const enLettersLine = (line.match(/[a-zA-Z]/g) || []).length;
         const arDomLine = hasArLine && arCharsLine > enLettersLine;
-        const mixedLine = hasArLine && !arDomLine;
+        const isMixedLine = hasArLine && enLettersLine > 0;
 
-        let wrappedH: number;
-        if (arDomLine) {
-          doc.font(FONT_AR).fontSize(noteSz);
-          wrappedH = (doc as any).heightOfString(line, { align: "right", features: AR_FEAT, width: noteW });
-        } else if (mixedLine) {
-          // للنص المختلط نقدّر ارتفاعاً بناءً على الطول
-          doc.font(FONT_EN).fontSize(noteSz);
-          wrappedH = doc.heightOfString(line, { align: "left", width: noteW });
+        // For mixed text: split into visual lines using EN font width estimation
+        // For Arabic-dominant: use PDFKit's built-in wrapping
+        // For English-only: use PDFKit's built-in wrapping
+        let subLines: string[];
+        if (isMixedLine) {
+          // Split using per-word width measurement for accurate mixed-text wrapping
+          subLines = wrapMixedToLines(line, noteSz, noteW - 10);
         } else {
-          doc.font(FONT_EN).fontSize(noteSz);
-          wrappedH = doc.heightOfString(line, { align: "left", width: noteW });
-        }
-        const rowH = Math.max(wrappedH + 10, lineH);
-
-        // صفحة جديدة إذا لزم
-        if (y + rowH > PH - 80) {
-          doc.addPage();
-          y = 40;
-          y = sectionHead(doc, "NOTES (cont.) / ملاحظات", X, y, W);
+          subLines = [line];
         }
 
-        // خلفية متناوبة
-        doc.save().rect(X, y, W, rowH).fill(li % 2 === 0 ? GRAY_ROW : WHITE).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
+        for (let si = 0; si < subLines.length; si++) {
+          const subLine = subLines[si];
+          const rowH = lineH + 4;
 
-        // رسم النص مع الخط الصحيح
-        if (arDomLine) {
-          doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-          (doc as any).text(line, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
-        } else if (mixedLine) {
-          // نص مختلط: استخدم renderMixedRTL لكل سطر
-          // لكن مع دعم التفاف السطور نستخدم FONT_AR مع lineBreak
-          doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-          (doc as any).text(line, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
-        } else {
-          doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
-          doc.text(line, X + 5, y + 5, { align: "left", width: noteW, lineBreak: true });
+          // صفحة جديدة إذا لزم
+          if (y + rowH > PH - 80) {
+            doc.addPage();
+            y = 40;
+            y = sectionHead(doc, "NOTES (cont.) / ملاحظات", X, y, W);
+          }
+
+          // خلفية متناوبة
+          const bgIdx = li + si;
+          doc.save().rect(X, y, W, rowH).fill(bgIdx % 2 === 0 ? GRAY_ROW : WHITE).restore();
+          doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
+
+          // رسم النص مع الخط الصحيح
+          if (isMixedLine) {
+            // نص مختلط: استخدم renderMixedRTL لرسم كل كلمة بالخط المناسب
+            // X=بداية الخلية, W=عرضها الكامل لضمان بدء النص من الحد الأيمن الصحيح
+            renderMixedRTL(doc, subLine, X, y + 5, W, noteSz, GRAY_MID);
+          } else if (arDomLine) {
+            doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
+            (doc as any).text(subLine, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
+          } else {
+            doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
+            doc.text(subLine, X + 5, y + 5, { align: "left", width: noteW, lineBreak: true });
+          }
+          y += rowH;
         }
-        y += rowH;
       }
       y += 14;
     }
