@@ -435,6 +435,11 @@ function scoreRecord(
   const queryIsArabic = isArabic(query);
   const transQuery = queryIsArabic ? arabicToLatin(query) : null;
 
+  // STRICT CHECK: Extract first word from query and names
+  const queryWords = query.trim().split(/\s+/).filter(w => w.length > 0);
+  const nameEnWords = (record.nameEn || "").trim().split(/\s+/).filter(w => w.length > 0);
+  const nameArWords = (record.nameAr || "").trim().split(/\s+/).filter(w => w.length > 0);
+
   // 0. Exact match with normalized search text (highest priority - before everything else)
   // This ensures "HUTHELE, Nasr Mohsen Ali" matches exactly "HUTHELE NASR MOHSEN ALI"
   if (searchNameEn === searchQuery) {
@@ -623,7 +628,22 @@ function scoreRecord(
   } else if (levScore > 0.75) {
     finalScore = levScore * 0.70;
   } else {
-    finalScore = tokenScore > 0.80 ? tokenScore * 0.50 : 0;
+    // STRICT: Only accept very high token scores (>0.95) to avoid false positives
+    // This prevents matching "محمد" alone from giving high scores
+    finalScore = tokenScore > 0.95 ? tokenScore * 0.50 : 0;
+  }
+
+  // FINAL CHECK: If score is high but first words don't match, reduce score significantly
+  // This prevents false positives like "محمود مقبل" matching "MOHAMMAD SADIQ"
+  if (finalScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
+    const queryFirstWord = normalize(queryWords[0]);
+    const nameFirstWord = normalize(nameEnWords[0]);
+    const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
+    
+    // If first words don't match well (< 0.70), reduce score to reject
+    if (firstWordSimilarity < 0.70) {
+      finalScore = 0; // Reject this match
+    }
   }
 
   // NEW: Use comprehensive scoring as final fallback
@@ -637,10 +657,15 @@ function scoreRecord(
     finalScore = finalComprehensiveScore;
   }
   
-  if (finalScore >= 0.9) return { score: finalScore, matchType: "exact" };
-  if (finalScore >= 0.75) return { score: finalScore, matchType: "fuzzy" };
-  if (finalScore >= 0.6) return { score: finalScore, matchType: "phonetic" };
-  return { score: finalScore, matchType: "fuzzy" };
+  // STRICT THRESHOLDS: Prevent false positives
+  // - 0.90+: Exact match (very high confidence)
+  // - 0.80-0.89: Fuzzy match (high confidence)
+  // - 0.70-0.79: Phonetic match (medium confidence)
+  // - Below 0.70: No match (reject to avoid false positives)
+  if (finalScore >= 0.90) return { score: Math.min(1.0, finalScore), matchType: "exact" };
+  if (finalScore >= 0.80) return { score: Math.min(1.0, finalScore), matchType: "fuzzy" };
+  if (finalScore >= 0.70) return { score: Math.min(1.0, finalScore), matchType: "phonetic" };
+  return { score: 0, matchType: "fuzzy" }; // Reject low scores to prevent false positives
 }
 
 // ─── Main search function ─────────────────────────────────────────────────────
