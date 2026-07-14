@@ -440,6 +440,37 @@ function scoreRecord(
   const nameEnWords = (record.nameEn || "").trim().split(/\s+/).filter(w => w.length > 0);
   const nameArWords = (record.nameAr || "").trim().split(/\s+/).filter(w => w.length > 0);
 
+  // CRITICAL: If query is Arabic, only search in Arabic names. If English, only in English names.
+  // This prevents "محمود" from matching "MOHAMMAD" when they're not the same person
+  const queryIsArabicLang = /[\u0600-\u06FF]/.test(query);
+  const queryIsEnglishLang = /[a-zA-Z]/.test(query);
+  const queryIsCyrillicLang = /[\u0400-\u04FF]/.test(query);
+  
+  // Check if record names contain Cyrillic (Russian, etc.)
+  const nameEnHasCyrillic = /[\u0400-\u04FF]/.test(record.nameEn || "");
+  const nameArHasCyrillic = /[\u0400-\u04FF]/.test(record.nameAr || "");
+  const altNameHasCyrillic = altNames.some(n => /[\u0400-\u04FF]/.test(n));
+  
+  // If query is Arabic, reject any record with Cyrillic names (Russian, etc.)
+  if (queryIsArabicLang && !queryIsEnglishLang && (nameEnHasCyrillic || nameArHasCyrillic || altNameHasCyrillic)) {
+    return { score: 0, matchType: "fuzzy" }; // Reject: Arabic query but Cyrillic names
+  }
+  
+  // If query is pure Arabic but record has no Arabic name, reject immediately
+  if (queryIsArabicLang && !queryIsEnglishLang && nameArWords.length === 0) {
+    return { score: 0, matchType: "fuzzy" }; // Reject: Arabic query but no Arabic name
+  }
+  
+  // If query is pure English but record has no English name, reject immediately
+  if (queryIsEnglishLang && !queryIsArabicLang && nameEnWords.length === 0) {
+    return { score: 0, matchType: "fuzzy" }; // Reject: English query but no English name
+  }
+  
+  // If query is Cyrillic, reject Arabic and English queries
+  if (queryIsCyrillicLang && (queryIsArabicLang || queryIsEnglishLang)) {
+    // Mixed script query - treat as English
+  }
+
   // 0. Exact match with normalized search text (highest priority - before everything else)
   // This ensures "HUTHELE, Nasr Mohsen Ali" matches exactly "HUTHELE NASR MOHSEN ALI"
   if (searchNameEn === searchQuery) {
@@ -552,7 +583,7 @@ function scoreRecord(
   // 3g. NEW: Smart Multi-Word Matching (2+ words matching = high priority)
   // LANGUAGE-AWARE: Only match with same language
   let smartMultiWordScore = 0;
-  const queryIsEnglishLang = /[a-zA-Z]/.test(query);
+  // Note: queryIsEnglishLang is already defined above
   
   // Only search in Arabic names if query is Arabic
   if (!queryIsEnglishLang) {
@@ -650,7 +681,19 @@ function scoreRecord(
   const comprehensiveScore = comprehensiveNameScore(query, record.nameEn || "");
   const comprehensiveScoreAr = comprehensiveNameScore(query, record.nameAr || "");
   const comprehensiveAltScore = Math.max(0, ...altNames.map((n) => comprehensiveNameScore(query, n)));
-  const finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
+  let finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
+  
+  // STRICT: Apply first word check to comprehensive score too
+  if (finalComprehensiveScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
+    const queryFirstWord = normalize(queryWords[0]);
+    const nameFirstWord = normalize(nameEnWords[0]);
+    const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
+    
+    // If first words don't match well, reject comprehensive score
+    if (firstWordSimilarity < 0.70) {
+      finalComprehensiveScore = 0;
+    }
+  }
   
   // If comprehensive scoring gives a better result, use it
   if (finalComprehensiveScore > finalScore) {
@@ -681,7 +724,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
     filters = {},
     limit = 20,
     offset = 0,
-    threshold = 0.60,
+    threshold = 0.85,
   } = options;
 
   if (!query || query.trim().length < 2) {
