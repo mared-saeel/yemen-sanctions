@@ -270,7 +270,8 @@ function tableRow(
   const arDominantRow = hasAr && arCharsRow > enLettersRow;
   const mixed = hasAr && !arDominantRow;
   const effectiveSz = sz;
-  const rh = (mixed ? 2 : 1) * (effectiveSz + 4) + 10;
+  // For Arabic text, increase row height to accommodate proper text rendering
+  const rh = (arDominantRow || mixed ? 3 : 1) * (effectiveSz + 4) + 10;
 
   // Background
   doc.save().rect(x, y, totalW, rh).fill(shade ? GRAY_ROW : WHITE).restore();
@@ -307,8 +308,14 @@ function tableRow(
     enText(doc, label, x + 5, y + (rh / 2) - (effectiveSz / 2), labelW - 10);
   }
 
-  // Value
-  renderValue(doc, value || "—", x + labelW + 5, y + (rh / 2) - (effectiveSz / 2), valW - 10, sz, BLACK);
+  // Value — handle Arabic text specially
+  if (arDominantRow) {
+    // Pure Arabic: use Arabic font directly
+    doc.font(FONT_AR).fontSize(sz).fillColor(BLACK);
+    arText(doc, value || "—", x + labelW, y + 5, valW - 10);
+  } else {
+    renderValue(doc, value || "—", x + labelW + 5, y + (rh / 2) - (effectiveSz / 2), valW - 10, sz, BLACK);
+  }
 
   return y + rh;
 }
@@ -514,13 +521,24 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       y = sectionHead(doc, "LISTING REASON", X, y, W);
       const lrText = record.listingReason;
       const hasArLR = /[\u0600-\u06FF]/.test(lrText);
-      const hasEnLR = /[a-zA-Z0-9]/.test(lrText);
-      const mixed = hasArLR && hasEnLR;
-      const lrH = (mixed ? 2 : 1) * 14 + 12;
-      doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
-      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
-      renderValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
-      y += lrH + 14;
+      // For Arabic text, use pure Arabic rendering to avoid BiDi issues
+      if (hasArLR) {
+        doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
+        const lrH = 28;
+        doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
+        // Use arText for proper Arabic rendering
+        arText(doc, lrText, X, y + 5, W - 10);
+        y += lrH + 14;
+      } else {
+        const hasEnLR = /[a-zA-Z0-9]/.test(lrText);
+        const mixed = hasArLR && hasEnLR;
+        const lrH = (mixed ? 2 : 1) * 14 + 12;
+        doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
+        renderValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
+        y += lrH + 14;
+      }
     }
 
     // -- LEGAL BASIS -----------------------------------------------------------
