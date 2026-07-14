@@ -372,7 +372,7 @@ export default function SearchPage() {
                 <h3 className="text-lg font-semibold text-foreground mb-2">Start Screening</h3>
                 <p className="text-muted-foreground text-sm max-w-sm">
                   Enter a name in Arabic or English to screen against{" "}
-                  <span className="text-foreground font-medium">39,710+</span> sanctioned entities.
+                  <span className="text-foreground font-medium">50,000+</span> sanctioned entities.
                   Our AI handles spelling variations and transliterations.
                 </p>
                 <div className="mt-6 grid grid-cols-2 gap-3 text-xs text-muted-foreground">

@@ -65,7 +65,7 @@ export default function LoginPage() {
 
         <div className="space-y-4">
           {[
-            { icon: Shield, text: "39,710+ سجل في قاعدة البيانات" },
+            { icon: Shield, text: "50,000+ سجل في قاعدة البيانات" },
             { icon: Lock, text: "بحث ذكي مع معالجة الأخطاء الإملائية" },
             { icon: User, text: "سجل تدقيق شامل لجميع العمليات" },
           ].map(({ icon: Icon, text }) => (

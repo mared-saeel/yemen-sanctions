@@ -25,7 +25,7 @@ const t = {
     signIn: "Sign In",
     toggleLang: "عربي",
     stats: [
-      { label: "Sanctioned Entities", value: "39,710+" },
+      { label: "Sanctioned Entities", value: "50,000+" },
       { label: "Issuing Bodies", value: "50+" },
       { label: "Search Speed", value: "<500ms" },
       { label: "Match Accuracy", value: "99.2%" },
@@ -75,7 +75,7 @@ const t = {
     signIn: "تسجيل الدخول",
     toggleLang: "English",
     stats: [
-      { label: "كيان مُدرَج", value: "+39,710" },
+      { label: "كيان مُدرَج", value: "+50,000" },
       { label: "جهة مُصدِرة", value: "+50" },
       { label: "سرعة البحث", value: "500ms<" },
       { label: "دقة المطابقة", value: "99.2%" },
@@ -147,8 +147,8 @@ export default function Home() {
     valueCard: isDark ? "bg-white/5 border-white/10" : "bg-white border-slate-100 shadow-sm",
     valueTitle: isDark ? "text-white" : "text-[#0f1923]",
     valueDesc: isDark ? "text-slate-400" : "text-slate-500",
-    ctaBg: isDark ? "bg-[#0f1923]" : "bg-[#0f1923]",
-    footerBg: isDark ? "bg-[#060d16]" : "bg-[#0f1923]",
+    ctaBg: isDark ? "bg-[#0f1923]" : "bg-slate-100",
+    footerBg: isDark ? "bg-[#060d16]" : "bg-slate-900",
     navLangBtn: isDark
       ? "border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
       : "border-amber-600/40 text-amber-700 hover:bg-amber-50",
@@ -422,8 +422,8 @@ export default function Home() {
           <div className="w-12 h-12 bg-amber-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ShieldCheck size={24} className="text-amber-500" />
           </div>
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">{tx.ctaTitle}</h2>
-          <p className="text-slate-400 mb-8 text-[15px] leading-relaxed">{tx.ctaDesc}</p>
+          <h2 className={`text-2xl md:text-3xl font-bold ${isDark ? "text-white" : "text-[#0f1923]"} mb-4`}>{tx.ctaTitle}</h2>
+          <p className={`${isDark ? "text-slate-400" : "text-slate-600"} mb-8 text-[15px] leading-relaxed`}>{tx.ctaDesc}</p>
           <Button
             onClick={() => window.location.href = "/login"}
             size="lg"
@@ -441,11 +441,11 @@ export default function Home() {
           <img
             src="/almustashar-logo.png"
             alt="Al-Mustashar"
-            className="h-12 w-auto object-contain brightness-0 invert opacity-70"
+            className={`h-12 w-auto object-contain ${isDark ? "brightness-0 invert opacity-70" : "opacity-70"}`}
           />
           <div className="text-center">
-            <p className="text-xs text-slate-500">{tx.footerText}</p>
-            <p className="text-xs text-slate-600 mt-1">{tx.footerSub}</p>
+            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{tx.footerText}</p>
+            <p className={`text-xs ${isDark ? "text-slate-600" : "text-slate-500"} mt-1`}>{tx.footerSub}</p>
           </div>
         </div>
       </footer>

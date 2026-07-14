@@ -202,11 +202,14 @@ Detected
 - [ ] Test and verify single page output
 - [ ] Save checkpoint and publish
 
-## Phase 25: إصلاح عرض الملاحظات الكاملة
-- [ ] إزالة اقتطاع النص في قسم Notes في RecordModal.tsx
-- [ ] إزالة اقتطاع النص في قسم Notes في RecordDetail.tsx
-- [ ] إزالة اقتطاع النص في تقرير PDF (pdf-report.ts)
-- [ ] التحقق من عرض الملاحظات الكاملة في جميع الأماكن
+## Phase 25: إصلاح عرض الملاحظات الكاملة ✅ مكتمل
+- [x] إزالة اقتطاع النص في قسم Notes في RecordModal.tsx
+- [x] إزالة اقتطاع النص في قسم Notes في RecordDetail.tsx
+- [x] إزالة اقتطاع النص في تقرير PDF (pdf-report.ts)
+- [x] التحقق من عرض الملاحظات الكاملة في جميع الأماكن
+- [x] إضافة دعم النصوص المختلطة (عربي + إنجليزي) في PDF
+- [x] تنزيل خط Cairo لدعم كلا اللغتين
+- [x] إصلاح اتجاه النص RTL في PDF
 
 ## Phase 26: إصلاح مشاكل اللغة العربية في تقرير PDF
 - [ ] إصلاح النص العربي المقلوب في LISTING REASON
