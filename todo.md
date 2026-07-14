@@ -301,8 +301,8 @@ Detected
 
 
 ## Phase 37: إصلاح دقة البحث في الباتش وتحسين الواجهة
-- [ ] Fix batch search accuracy - false positives like "ماجد عبدالخالق" matching "ДЕНИС МАЙДАНОВ"
-- [ ] Implement proper classification thresholds: MATCH >= 85%, POSSIBLE_MATCH 60-84%, NO_MATCH < 60%
+- [x] Fix batch search accuracy - false positives like "ماجد عبدالخالق" matching "ДЕНИС МАЙДАНОВ" (تم إصلاح الحد الأدنى للمطابقة)
+- [x] Implement proper classification thresholds: MATCH >= 85%, POSSIBLE_MATCH 60-84%, NO_MATCH < 60%
 - [ ] Add real-time progress bar for batch processing
 - [ ] Improve BatchPage UI to look more professional
 - [ ] Ensure batch uses same search engine as single search

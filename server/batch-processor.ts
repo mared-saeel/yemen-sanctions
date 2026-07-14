@@ -5,7 +5,7 @@
  * 1. Uses wordOverlapScore as a secondary validation gate (prevents false positives)
  * 2. Loads all records once into memory for fast batch processing
  * 3. Supports async job model with progress tracking
- * 4. Classification: MATCH (score>=85 + overlap>=0.40), POSSIBLE_MATCH (score>=70 + overlap>=0.35), NO_MATCH
+ * 4. Classification: MATCH (score >= 85%), POSSIBLE_MATCH (60% <= score < 85%), NO_MATCH (score < 60%)
  */
 import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne, type BatchSearchRecord, type SearchResult } from "./search-engine";
 import Fuse from "fuse.js";
@@ -238,13 +238,13 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
               const bestOverlap = Math.max(overlap, overlapAr, altOverlap);
               const score = candidate.matchScore;
 
-              if (score >= 85 && bestOverlap >= 0.50) {
-                // MATCH: high fuzzy score AND significant word overlap (>= 50%)
+              if (score >= 85) {
+                // MATCH: score >= 85%
                 status = 'MATCH';
                 chosenTop = candidate;
                 break;
-              } else if (score >= 75 && bestOverlap >= 0.45) {
-                // POSSIBLE_MATCH: decent score AND decent overlap
+              } else if (score >= 60) {
+                // POSSIBLE_MATCH: score 60-84%
                 if (status === 'NO_MATCH') {
                   status = 'POSSIBLE_MATCH';
                   chosenTop = candidate;
