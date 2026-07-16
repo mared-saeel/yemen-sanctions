@@ -5,7 +5,7 @@
  * 1. Uses wordOverlapScore as a secondary validation gate (prevents false positives)
  * 2. Loads all records once into memory for fast batch processing
  * 3. Supports async job model with progress tracking
- * 4. Classification: MATCH (score >= 85% AND >=2 matched words), POSSIBLE_MATCH (60-84% AND >=2 matched words), NO_MATCH (score < 60% OR <2 matched words)
+ * 4. Classification: MATCH (score >= 85% AND >=3 matched words), POSSIBLE_MATCH (60-84% AND >=3 matched words), NO_MATCH (score < 60% OR <3 matched words)
  */
 import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne, type BatchSearchRecord, type SearchResult } from "./search-engine";
 import Fuse from "fuse.js";
@@ -262,9 +262,9 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
                 : 0;
               const bestMatchedWords = Math.max(matchedWordsEn, matchedWordsAr, matchedWordsAlt);
               
-              // CRITICAL: Must have at least 2 matched words from input name
-              // This prevents false positives from single-word matches
-              if (bestMatchedWords < 2) {
+              // CRITICAL: Must have at least 3 matched words from input name
+              // This prevents false positives from single or double-word matches
+              if (bestMatchedWords < 3) {
                 continue; // Skip this candidate - not enough word matches
               }
               

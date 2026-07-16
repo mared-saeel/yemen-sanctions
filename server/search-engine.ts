@@ -1083,8 +1083,8 @@ export function batchSearchOne(
       }
     }
     
-    // Only add to candidates if at least 2 tokens match
-    if (matchedTokenCount >= 2) candidates.push(record);
+    // Only add to candidates if at least 3 tokens match
+    if (matchedTokenCount >= 3) candidates.push(record);
   }
 
   // Step 2: score candidates
