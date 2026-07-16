@@ -1068,18 +1068,23 @@ export function batchSearchOne(
     const nAr = normalize(record.nameAr || "");
     const nAlts = (record.alternativeNames || []).map(n => normalize(n));
     const rawEn = (record.nameEn || "").toLowerCase();
-
-    // Check if any token from the query appears in the record name
+    // Check if at least 2 tokens from the query appear in the record name
     const queryTokens = nQuery.split(/\s+/).filter(t => t.length >= 2);
     const rawTokens = rawQuery.split(/[\s.,;:!?()\[\]{}'"]+ /).filter(t => t.length >= 2);
     const transTokens = transQuery ? transQuery.split(/\s+/).filter(t => t.length >= 2) : [];
     const allTokens = Array.from(new Set([...queryTokens, ...rawTokens, ...transTokens]));
 
-    const hasMatch = allTokens.some(t =>
-      nEn.includes(t) || nAr.includes(t) || rawEn.includes(t) ||
-      nAlts.some(a => a.includes(t))
-    );
-    if (hasMatch) candidates.push(record);
+    // CRITICAL: Count how many tokens match in the record
+    let matchedTokenCount = 0;
+    for (const t of allTokens) {
+      if (nEn.includes(t) || nAr.includes(t) || rawEn.includes(t) ||
+          nAlts.some(a => a.includes(t))) {
+        matchedTokenCount++;
+      }
+    }
+    
+    // Only add to candidates if at least 2 tokens match
+    if (matchedTokenCount >= 2) candidates.push(record);
   }
 
   // Step 2: score candidates

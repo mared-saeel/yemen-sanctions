@@ -262,7 +262,8 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
                 : 0;
               const bestMatchedWords = Math.max(matchedWordsEn, matchedWordsAr, matchedWordsAlt);
               
-              // CRITICAL: Must have at least 2 matched words
+              // CRITICAL: Must have at least 2 matched words from input name
+              // This prevents false positives from single-word matches
               if (bestMatchedWords < 2) {
                 continue; // Skip this candidate - not enough word matches
               }
