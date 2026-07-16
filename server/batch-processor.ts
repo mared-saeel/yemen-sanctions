@@ -5,7 +5,7 @@
  * 1. Uses wordOverlapScore as a secondary validation gate (prevents false positives)
  * 2. Loads all records once into memory for fast batch processing
  * 3. Supports async job model with progress tracking
- * 4. Classification: MATCH (score >= 85%), POSSIBLE_MATCH (60% <= score < 85%), NO_MATCH (score < 60%)
+ * 4. Classification: MATCH (score >= 85% AND >=2 matched words), POSSIBLE_MATCH (60-84% AND >=2 matched words), NO_MATCH (score < 60% OR <2 matched words)
  */
 import { loadAllRecordsForBatch, buildBatchFuseIndex, batchSearchOne, type BatchSearchRecord, type SearchResult } from "./search-engine";
 import Fuse from "fuse.js";
@@ -113,6 +113,30 @@ function levenshteinDist(a: string, b: string): number {
  *   - Reverse: 2/4 matched = 0.50
  *   - Average: 0.75 → ABOVE threshold of 0.60 for POSSIBLE_MATCH ✓
  */
+/**
+ * Count how many words from nameA match in nameB (with 80% similarity threshold)
+ * Returns the count of matched words from nameA
+ */
+function countMatchedWords(nameA: string, nameB: string): number {
+  const tokensA = batchNormalize(nameA).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+  const tokensB = batchNormalize(nameB).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+
+  let matchedCount = 0;
+  for (const ta of tokensA) {
+    for (const tb of tokensB) {
+      const maxLen = Math.max(ta.length, tb.length);
+      if (maxLen === 0) continue;
+      const sim = 1 - levenshteinDist(ta, tb) / maxLen;
+      if (sim >= 0.80) {
+        matchedCount++;
+        break;
+      }
+    }
+  }
+  return matchedCount;
+}
+
 function wordOverlapScore(nameA: string, nameB: string): number {
   const tokensA = batchNormalize(nameA).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
   const tokensB = batchNormalize(nameB).split(/\s+/).filter(t => t.length >= 2 && !STOP_WORDS.has(t));
@@ -226,25 +250,32 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
             let status: 'MATCH' | 'POSSIBLE_MATCH' | 'NO_MATCH' = 'NO_MATCH';
             let chosenTop: SearchResult | null = null;
 
-            // Evaluate each candidate with wordOverlapScore gate
+            // Evaluate each candidate with minimum 2 matched words requirement
             for (const candidate of candidates) {
               const candidateName = candidate.nameEn || candidate.nameAr || "";
-              const overlap = wordOverlapScore(trimmedName, candidateName);
-              const overlapAr = candidate.nameAr ? wordOverlapScore(trimmedName, candidate.nameAr) : 0;
-              // Also check alternative names for overlap
-              const altOverlap = candidate.alternativeNames
-                ? Math.max(0, ...candidate.alternativeNames.map(alt => wordOverlapScore(trimmedName, alt)))
+              
+              // Count matched words from input name in candidate
+              const matchedWordsEn = countMatchedWords(trimmedName, candidateName);
+              const matchedWordsAr = candidate.nameAr ? countMatchedWords(trimmedName, candidate.nameAr) : 0;
+              const matchedWordsAlt = candidate.alternativeNames
+                ? Math.max(0, ...candidate.alternativeNames.map(alt => countMatchedWords(trimmedName, alt)))
                 : 0;
-              const bestOverlap = Math.max(overlap, overlapAr, altOverlap);
+              const bestMatchedWords = Math.max(matchedWordsEn, matchedWordsAr, matchedWordsAlt);
+              
+              // CRITICAL: Must have at least 2 matched words
+              if (bestMatchedWords < 2) {
+                continue; // Skip this candidate - not enough word matches
+              }
+              
               const score = candidate.matchScore;
 
               if (score >= 85) {
-                // MATCH: score >= 85%
+                // MATCH: score >= 85% AND at least 2 matched words
                 status = 'MATCH';
                 chosenTop = candidate;
                 break;
               } else if (score >= 60) {
-                // POSSIBLE_MATCH: score 60-84%
+                // POSSIBLE_MATCH: score 60-84% AND at least 2 matched words
                 if (status === 'NO_MATCH') {
                   status = 'POSSIBLE_MATCH';
                   chosenTop = candidate;
