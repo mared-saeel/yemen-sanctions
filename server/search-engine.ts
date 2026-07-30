@@ -180,6 +180,105 @@ function levenshteinSimilarity(a: string, b: string): number {
   const dist = levenshtein.get(a, b);
   return 1 - dist / maxLen;
 }
+
+// ─── Jaro-Winkler similarity ──────────────────────────────────────────────────
+/**
+ * Jaro-Winkler similarity: better than Levenshtein for short names.
+ * Gives extra weight to matching prefixes (first letters).
+ * Used by OFAC officially for sanctions screening.
+ */
+function jaroSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const lenA = a.length;
+  const lenB = b.length;
+  if (lenA === 0 || lenB === 0) return 0;
+
+  const matchWindow = Math.floor(Math.max(lenA, lenB) / 2) - 1;
+  if (matchWindow < 0) return 0;
+
+  const aMatches = new Array(lenA).fill(false);
+  const bMatches = new Array(lenB).fill(false);
+  let matches = 0;
+  let transpositions = 0;
+
+  for (let i = 0; i < lenA; i++) {
+    const start = Math.max(0, i - matchWindow);
+    const end = Math.min(i + matchWindow + 1, lenB);
+    for (let j = start; j < end; j++) {
+      if (bMatches[j] || a[i] !== b[j]) continue;
+      aMatches[i] = true;
+      bMatches[j] = true;
+      matches++;
+      break;
+    }
+  }
+
+  if (matches === 0) return 0;
+
+  let k = 0;
+  for (let i = 0; i < lenA; i++) {
+    if (!aMatches[i]) continue;
+    while (!bMatches[k]) k++;
+    if (a[i] !== b[k]) transpositions++;
+    k++;
+  }
+
+  return (matches / lenA + matches / lenB + (matches - transpositions / 2) / matches) / 3;
+}
+
+function jaroWinklerSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const jaro = jaroSimilarity(a, b);
+  // Winkler prefix bonus (up to 4 chars)
+  let prefixLen = 0;
+  const maxPrefix = Math.min(4, Math.min(a.length, b.length));
+  for (let i = 0; i < maxPrefix; i++) {
+    if (a[i] === b[i]) prefixLen++;
+    else break;
+  }
+  return jaro + prefixLen * 0.1 * (1 - jaro);
+}
+
+// ─── Subset Match Score ────────────────────────────────────────────────────────
+/**
+ * Checks if all query words are found in the target name (subset matching).
+ * This is the core fix for "سويد للصرافة" finding "شركة سويد واولاده للصرافة".
+ * Returns a score 0.75-0.95 based on coverage ratio.
+ */
+function subsetMatchScore(query: string, target: string): number {
+  if (!query || !target) return 0;
+  const qTokens = normalize(query).split(/\s+/).filter(t => t.length >= 2);
+  const tTokens = normalize(target).split(/\s+/).filter(t => t.length >= 2);
+  if (qTokens.length === 0 || tTokens.length === 0) return 0;
+
+  // Arabic stop words to exclude from subset matching
+  const stopWords = new Set(['شركة', 'مؤسسة', 'مجموعة', 'و', 'في', 'من', 'إلى', 'على', 'أو', 'ابن', 'بن']);
+  const meaningfulQTokens = qTokens.filter(t => !stopWords.has(t));
+  if (meaningfulQTokens.length === 0) return 0;
+
+  let matchedCount = 0;
+  for (const qt of meaningfulQTokens) {
+    // Check if this query token exists in any target token with high similarity
+    const found = tTokens.some(tt => {
+      // Exact or near-exact match
+      if (tt === qt) return true;
+      // Substring match (e.g., "صرافة" in "للصرافة")
+      if (tt.includes(qt) || qt.includes(tt)) return true;
+      // Fuzzy match with Jaro-Winkler
+      return jaroWinklerSimilarity(qt, tt) >= 0.85;
+    });
+    if (found) matchedCount++;
+  }
+
+  const coverageRatio = matchedCount / meaningfulQTokens.length;
+  if (coverageRatio < 1.0) return 0; // All query words must be found
+
+  // Score based on how much of the target is covered by the query
+  // If query is 2 words and target is 6 words, score = 0.80
+  // If query is 4 words and target is 5 words, score = 0.92
+  const targetCoverage = meaningfulQTokens.length / Math.max(1, tTokens.length);
+  return 0.75 + (targetCoverage * 0.20); // Range: 0.75 - 0.95
+}
 // ─── Token-based similarity ────────────────────────────────────────────────────
 
 /**
@@ -676,11 +775,48 @@ function scoreRecord(
     : 0;
   const levScore = Math.max(levEn, levAr, levTrans);
 
+  // 5. Jaro-Winkler similarity (better for short names and transliterations)
+  const jwEn = Math.max(
+    jaroWinklerSimilarity(nQuery, nNameEn),
+    jaroWinklerSimilarity(rawQuery, rawNameEn)
+  );
+  const jwAr = jaroWinklerSimilarity(nQuery, nNameAr);
+  const jwAlt = Math.max(0, ...altNames.map(n => jaroWinklerSimilarity(nQuery, normalize(n))));
+  const jwTrans = transQuery ? Math.max(
+    jaroWinklerSimilarity(transQuery, rawNameEn),
+    jaroWinklerSimilarity(transQuery, nNameEn)
+  ) : 0;
+  const jwScore = Math.max(jwEn, jwAr, jwAlt, jwTrans);
+
+  // 6. Subset Match Score (key fix for partial company name search)
+  // e.g., "سويد للصرافة" finds "شركة سويد واولاده للصرافة"
+  let subsetScore = 0;
+  if (queryIsArabicLang && !queryIsEnglishLang) {
+    subsetScore = Math.max(
+      subsetMatchScore(query, record.nameAr || ""),
+      Math.max(0, ...altNames.map(n => subsetMatchScore(query, n)))
+    );
+  } else if (queryIsEnglishLang && !queryIsArabicLang) {
+    subsetScore = Math.max(
+      subsetMatchScore(query, record.nameEn || ""),
+      Math.max(0, ...altNames.map(n => subsetMatchScore(query, n)))
+    );
+  } else {
+    subsetScore = Math.max(
+      subsetMatchScore(query, record.nameEn || ""),
+      subsetMatchScore(query, record.nameAr || ""),
+      Math.max(0, ...altNames.map(n => subsetMatchScore(query, n)))
+    );
+  }
+
   // Combine: NEW algorithm with smart multi-word matching as primary
   let finalScore: number;
   
   if (smartMultiWordScore > 0) {
     finalScore = smartMultiWordScore * 0.99;
+  } else if (subsetScore > 0) {
+    // Subset match: query words all found in target (e.g., "سويد للصرافة" → "شركة سويد واولاده للصرافة")
+    finalScore = subsetScore;
   } else if (multiWordScore > 0) {
     finalScore = multiWordScore * 0.98;
   } else if (phraseScore > 0) {
@@ -691,6 +827,9 @@ function scoreRecord(
     finalScore = proxScore * 0.90;
   } else if (biScore > 0.75) {
     finalScore = biScore * 0.85;
+  } else if (jwScore > 0.88) {
+    // Jaro-Winkler: good for short name variations
+    finalScore = jwScore * 0.82;
   } else if (levScore > 0.75) {
     finalScore = levScore * 0.70;
   } else {
@@ -701,14 +840,30 @@ function scoreRecord(
 
   // FINAL CHECK: If score is high but first words don't match, reduce score significantly
   // This prevents false positives like "محمود مقبل" matching "MOHAMMAD SADIQ"
+  // EXCEPTION: If query words are all found in the target (subset match), allow it
+  // This enables "سويد للصرافة" to match "شركة سويد واولاده للصرافة"
   if (finalScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
     const queryFirstWord = normalize(queryWords[0]);
     const nameFirstWord = normalize(nameEnWords[0]);
     const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
     
-    // If first words don't match well (< 0.70), reduce score to reject
+    // If first words don't match well (< 0.70), check if it's a subset match
     if (firstWordSimilarity < 0.70) {
-      finalScore = 0; // Reject this match
+      // Check if all query words exist somewhere in the target (subset match)
+      // e.g., "سويد للصرافة" → both words exist in "شركة سويد واولاده للصرافة"
+      const qNormWords = queryWords.map(w => normalize(w)).filter(w => w.length >= 2);
+      const tNormWordsEn = nameEnWords.map(w => normalize(w));
+      const tNormWordsAr = nameArWords.map(w => normalize(w));
+      const allTargetWords = [...tNormWordsEn, ...tNormWordsAr];
+      
+      const allQueryWordsFoundInTarget = qNormWords.every(qw =>
+        allTargetWords.some(tw => levenshteinSimilarity(qw, tw) >= 0.80)
+      );
+      
+      if (!allQueryWordsFoundInTarget) {
+        finalScore = 0; // Reject: not a subset match and first word doesn't match
+      }
+      // If it IS a subset match, keep the score (don't reject)
     }
   }
 
@@ -718,15 +873,24 @@ function scoreRecord(
   const comprehensiveAltScore = Math.max(0, ...altNames.map((n) => comprehensiveNameScore(query, n)));
   let finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
   
-  // STRICT: Apply first word check to comprehensive score too
+  // STRICT: Apply first word check to comprehensive score too (with subset exception)
   if (finalComprehensiveScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
     const queryFirstWord = normalize(queryWords[0]);
     const nameFirstWord = normalize(nameEnWords[0]);
     const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
     
-    // If first words don't match well, reject comprehensive score
     if (firstWordSimilarity < 0.70) {
-      finalComprehensiveScore = 0;
+      // Check subset match before rejecting
+      const qNormWords2 = queryWords.map(w => normalize(w)).filter(w => w.length >= 2);
+      const tNormWordsEn2 = nameEnWords.map(w => normalize(w));
+      const tNormWordsAr2 = nameArWords.map(w => normalize(w));
+      const allTargetWords2 = [...tNormWordsEn2, ...tNormWordsAr2];
+      const allQueryWordsFoundInTarget2 = qNormWords2.every(qw =>
+        allTargetWords2.some(tw => levenshteinSimilarity(qw, tw) >= 0.80)
+      );
+      if (!allQueryWordsFoundInTarget2) {
+        finalComprehensiveScore = 0;
+      }
     }
   }
   
@@ -795,13 +959,10 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   }
 
   // Step 1: Fast DB pre-filter using LIKE for candidate retrieval
-  // Two-phase approach: First try full-phrase match, then fall back to token-based search
+  // ALWAYS use both full-phrase AND token-based search simultaneously
+  // This ensures "سويد للصرافة" finds "شركة سويد واولاده للصرافة" even though the full phrase doesn't match
   
-  const nQuery_lower = nQuery.toLowerCase();
-  const rawQuery_lower = trimmedQuery.toLowerCase();
-  
-  // Phase 1: Try full-phrase match first (highest priority)
-  // Use both original query and normalized query (without punctuation/symbols)
+  // Full-phrase LIKE conditions
   const fullPhraseLike = [
     like(sanctionsRecords.nameEn, `%${trimmedQuery}%`),
     like(sanctionsRecords.nameEn, `%${normalizedQuery}%`),
@@ -810,60 +971,49 @@ export async function searchSanctions(options: SearchOptions): Promise<{
     like(sanctionsRecords.searchIndex, `%${trimmedQuery}%`),
     like(sanctionsRecords.searchIndex, `%${normalizedQuery}%`),
   ];
-  
-  const fullPhraseWhere =
+
+  // Token-based LIKE conditions (always computed, not just as fallback)
+  const nSearchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
+  const rawTerms = trimmedQuery
+    .toLowerCase()
+    .split(/[\s.,;:!?()[\]{}'"\-]+/)
+    .filter((t) => t.length >= 2);
+  // Transliteration terms: if Arabic query, convert to Latin and split
+  const transTerms = isArabic(trimmedQuery)
+    ? arabicToLatin(trimmedQuery).split(/\s+/).filter((t) => t.length >= 2)
+    : [];
+  // Combine all sets, deduplicate
+  const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
+
+  // Arabic stop words for company names - keep meaningful terms
+  const stopWords = new Set([
+    'co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el',
+    'و', 'في', 'من', 'إلى', 'على', 'أو',
+  ]);
+  const meaningfulTerms = allTerms.filter((t) => t.length >= 2 && !stopWords.has(t));
+  const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
+
+  // Build token LIKE conditions - each token searched independently with OR
+  const tokenLikeConditions = termsToSearch.flatMap((term) => [
+    like(sanctionsRecords.nameEn, `%${term}%`),
+    like(sanctionsRecords.nameAr, `%${term}%`),
+    like(sanctionsRecords.searchIndex, `%${term}%`),
+  ]);
+
+  // COMBINED: full-phrase OR any-token (always both, not sequential)
+  const allLikeConditions = [...fullPhraseLike, ...tokenLikeConditions];
+
+  const whereClause =
     conditions.length > 0
-      ? and(...conditions, or(...fullPhraseLike))
-      : or(...fullPhraseLike);
-  
-  // Try full-phrase search first
+      ? and(...conditions, or(...allLikeConditions))
+      : or(...allLikeConditions);
+
+  // Fetch candidates (max 2000 for scoring)
   let candidates = await db
     .select()
     .from(sanctionsRecords)
-    .where(fullPhraseWhere)
+    .where(whereClause)
     .limit(2000);
-  
-  // Phase 2: If no results from full-phrase, fall back to token-based search
-  if (candidates.length === 0) {
-    const nSearchTerms = nQuery.split(/\s+/).filter((t) => t.length >= 2);
-    // Also use original (non-normalized) terms for English queries
-    const rawTerms = trimmedQuery
-      .toLowerCase()
-      .split(/[\s.,;:!?()[\]{}'"-]+/)
-      .filter((t) => t.length >= 2);
-    // Transliteration terms: if Arabic query, convert to Latin and split
-    const transTerms = isArabic(trimmedQuery)
-      ? arabicToLatin(trimmedQuery).split(/\s+/).filter((t) => t.length >= 2)
-      : [];
-    // Combine all sets, deduplicate
-    const allTerms = Array.from(new Set([...nSearchTerms, ...rawTerms, ...transTerms]));
-
-    // Filter out stop words but keep all meaningful tokens
-    const stopWords = new Set(['co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el']);
-    const meaningfulTerms = allTerms.filter((t) => t.length >= 3 && !stopWords.has(t));
-    const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
-
-    // Each token is searched independently with OR — ensures we find records even if word order differs
-    const likeConditions = termsToSearch.flatMap((term) => [
-      like(sanctionsRecords.nameEn, `%${term}%`),
-      like(sanctionsRecords.nameAr, `%${term}%`),
-      like(sanctionsRecords.searchIndex, `%${term}%`),
-    ]);
-
-    const allLikeConditions = [...likeConditions, ...fullPhraseLike];
-
-    const whereClause =
-      conditions.length > 0
-        ? and(...conditions, or(...allLikeConditions))
-        : or(...allLikeConditions);
-
-    // Fetch candidates (max 2000 for scoring)
-    candidates = await db
-      .select()
-      .from(sanctionsRecords)
-      .where(whereClause)
-      .limit(2000);
-  }
 
   // Step 2: Score candidates using fuzzy matching
   const scored: SearchResult[] = [];
@@ -1083,8 +1233,10 @@ export function batchSearchOne(
       }
     }
     
-    // Only add to candidates if at least 3 tokens match
-    if (matchedTokenCount >= 3) candidates.push(record);
+    // Add to candidates if at least 1 token matches (for short queries)
+    // or at least 2 tokens match for longer queries (3+ words)
+    const minTokensRequired = allTokens.length >= 3 ? 2 : 1;
+    if (matchedTokenCount >= minTokensRequired) candidates.push(record);
   }
 
   // Step 2: score candidates
