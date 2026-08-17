@@ -49,6 +49,53 @@ function arText(doc: PDFKit.PDFDocument, t: string, x: number, y: number, w: num
 }
 
 /**
+ * Use Cairo for every body value containing Arabic. Cairo includes both Arabic
+ * and Latin glyphs, which prevents replacement boxes in bilingual fields.
+ */
+function bodyValueHeight(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): number {
+  const value = text && text !== "—" ? text : "—";
+  const hasArabic = isAr(value);
+  const hasLatin = /[a-zA-Z0-9]/.test(value);
+  if (hasArabic && hasLatin) return mixedTextHeight(doc, value, w, sz);
+  doc.font(hasArabic ? FONT_MIXED : FONT_EN).fontSize(sz);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return Math.max(sz + 2, (doc as any).heightOfString(value, {
+    align: hasArabic ? "right" : "left",
+    features: hasArabic ? AR_FEAT : undefined,
+    width: w,
+    lineBreak: true,
+    lineGap: 1,
+  }));
+}
+
+function drawBodyValue(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number, y: number, w: number,
+  sz: number,
+  color = BLACK
+): number {
+  const value = text && text !== "—" ? text : "—";
+  const hasArabic = isAr(value);
+  const hasLatin = /[a-zA-Z0-9]/.test(value);
+  if (hasArabic && hasLatin) {
+    renderMixedRTL(doc, value, x, y, w, sz, color);
+    return mixedTextHeight(doc, value, w, sz);
+  }
+  const height = bodyValueHeight(doc, value, w, sz);
+  doc.font(hasArabic ? FONT_MIXED : FONT_EN).fontSize(sz).fillColor(value === "—" ? GRAY_MID : color);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text(value, x, y, {
+    align: hasArabic ? "right" : "left",
+    features: hasArabic ? AR_FEAT : undefined,
+    width: w,
+    lineBreak: true,
+    lineGap: 1,
+  });
+  return height;
+}
+
+/**
  * Render mixed Arabic+English text by splitting into word-groups and rendering each
  * group with the appropriate font. Groups are reversed for RTL visual order.
  * Arabic words use FONT_AR, English/numeric words use FONT_EN.
@@ -60,76 +107,76 @@ function renderMixedRTL(
   sz: number,
   color = BLACK
 ): void {
-  // Normalize multiple spaces to single space
-  const cleanText = text.replace(/\s+/g, ' ').trim();
-  // Split into tokens by spaces
-  const tokens = cleanText.split(' ');
-  const groups: { text: string; isAr: boolean }[] = [];
-  let cur: { text: string; isAr: boolean } | null = null;
+  const lines = mixedTextLines(doc, text, w, sz);
+  const lineHeight = sz + 5;
 
-  for (const token of tokens) {
-    if (!token) continue;
-    // Token is Arabic if it contains Arabic chars
-    // Neutral punctuation (()[]{}) with no EN chars: inherit from previous group
-    const arChars = (token.match(/[\u0600-\u06FF]/g) || []).length;
-    const enChars = (token.match(/[a-zA-Z0-9]/g) || []).length;
-    const prevIsAr: boolean = cur !== null ? cur.isAr : false;
-    const tokenIsAr: boolean = arChars > 0 || (enChars === 0 && prevIsAr);
-    if (!cur) {
-      cur = { text: token, isAr: tokenIsAr };
-    } else if (tokenIsAr === cur.isAr) {
-      cur.text += ' ' + token;
-    } else {
-      groups.push(cur);
-      cur = { text: token, isAr: tokenIsAr };
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const groups: Array<{ isArabic: boolean; tokens: MixedToken[] }> = [];
+    for (const token of lines[lineIndex]) {
+      const last = groups[groups.length - 1];
+      if (last && last.isArabic === token.isArabic) last.tokens.push(token);
+      else groups.push({ isArabic: token.isArabic, tokens: [token] });
     }
-  }
-  if (cur && cur.text.trim()) groups.push(cur);
 
-  // Reverse groups for RTL visual order (Arabic first from right)
-  groups.reverse();
-
-  // Post-process: split leading/trailing parentheses from Arabic groups
-  // so they render with FONT_EN (which supports them) instead of FONT_AR
-  const finalGroups: { text: string; isAr: boolean }[] = [];
-  for (const g of groups) {
-    if (g.isAr) {
-      const m = g.text.match(/^([\(\[\{]*)((?:[\s\S])*?)([\)\]\}]*)$/);
-      if (m) {
-        const lead = m[1], core = m[2].trim(), trail = m[3];
-        if (trail) finalGroups.push({ text: trail, isAr: false });
-        if (core) finalGroups.push({ text: core, isAr: true });
-        if (lead) finalGroups.push({ text: lead, isAr: false });
+    let cursorX = x + w;
+    for (const group of groups) {
+      const groupWidth = group.tokens.reduce((sum, token) => sum + token.width, 0);
+      const groupStart = cursorX - groupWidth;
+      if (group.isArabic) {
+        let tokenX = cursorX;
+        for (const token of group.tokens) {
+          tokenX -= token.width;
+          doc.font(FONT_MIXED).fontSize(sz).fillColor(color);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (doc as any).text(token.text, tokenX, y + lineIndex * lineHeight, { align: "right", features: AR_FEAT, width: token.width, lineBreak: false });
+        }
       } else {
-        finalGroups.push(g);
+        let tokenX = groupStart;
+        for (const token of group.tokens) {
+          doc.font(FONT_EN).fontSize(sz).fillColor(color);
+          doc.text(token.text, tokenX, y + lineIndex * lineHeight, { align: "left", width: token.width, lineBreak: false });
+          tokenX += token.width;
+        }
       }
-    } else {
-      finalGroups.push(g);
+      cursorX = groupStart;
     }
   }
+}
 
-  // Measure widths
-  const widths: number[] = [];
-  for (const g of finalGroups) {
-    doc.font(g.isAr ? FONT_AR : FONT_EN).fontSize(sz);
-    widths.push(doc.widthOfString(g.text.trim()) + 6);
+type MixedToken = { text: string; isArabic: boolean; width: number };
+
+function mixedTextLines(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): MixedToken[][] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const tokens: MixedToken[] = [];
+  let previousWasArabic = true;
+  for (const word of words) {
+    const containsArabic = isAr(word);
+    const containsLatin = /[a-zA-Z0-9]/.test(word);
+    const isArabicToken: boolean = containsArabic || (!containsLatin && previousWasArabic);
+    previousWasArabic = isArabicToken;
+    doc.font(isArabicToken ? FONT_MIXED : FONT_EN).fontSize(sz);
+    tokens.push({ text: word, isArabic: isArabicToken, width: doc.widthOfString(word) + 5 });
   }
 
-  // Render right-to-left
-  let curX = x + w;
-  for (let i = 0; i < finalGroups.length; i++) {
-    const g = finalGroups[i];
-    const gW = widths[i];
-    curX -= gW;
-    if (g.isAr) {
-      doc.font(FONT_AR).fontSize(sz).fillColor(color);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (doc as any).text(g.text.trim(), curX, y, { align: 'right', features: AR_FEAT, width: gW, lineBreak: false });
+  const lines: MixedToken[][] = [];
+  let line: MixedToken[] = [];
+  let lineWidth = 0;
+  for (const token of tokens) {
+    if (line.length && lineWidth + token.width > w) {
+      lines.push(line);
+      line = [token];
+      lineWidth = token.width;
     } else {
-      doc.font(FONT_EN).fontSize(sz).fillColor(color);
-      doc.text(g.text.trim(), curX, y, { align: 'left', width: gW, lineBreak: false });
+      line.push(token);
+      lineWidth += token.width;
     }
   }
+  if (line.length) lines.push(line);
+  return lines.length ? lines : [[]];
+}
+
+function mixedTextHeight(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): number {
+  return mixedTextLines(doc, text, w, sz).length * (sz + 5);
 }
 
 /** Draw English text left-aligned */
@@ -143,7 +190,7 @@ function hr(doc: PDFKit.PDFDocument, y: number, x1: number, x2: number, color = 
 }
 
 /** Parse rawNotes string into structured fields for PDF report */
-function parseRawNotesForPdf(raw: string | null | undefined) {
+export function parseRawNotesForPdf(raw: string | null | undefined) {
   if (!raw) return { nationality: null as string | null, dateOfBirth: null as string | null, placeOfBirth: null as string | null, alternativeNames: [] as string[], notes: null as string | null, referenceNumber: null as string | null, addresses: [] as string[] };
   const str = String(raw);
   const natMatch = str.match(/الجنسية:\s*([^|]+)/);
@@ -221,33 +268,7 @@ function renderValue(
   sz: number,
   color = BLACK
 ): number {
-  if (!text || text === "—") {
-    doc.font(FONT_EN).fontSize(sz).fillColor(GRAY_MID);
-    enText(doc, "—", x, y, w);
-    return y + sz + 2;
-  }
-  const hasAr = /[\u0600-\u06FF]/.test(text);
-  // Count Arabic chars vs Latin letters — if Arabic dominates, treat as Arabic
-  const arChars = (text.match(/[\u0600-\u06FF]/g) || []).length;
-  const enLetters = (text.match(/[a-zA-Z]/g) || []).length;
-  // Pure Arabic (no Latin letters at all) → use Arabic font directly
-  // Any mix of Arabic + Latin → always use mixed renderer to avoid font fallback issues
-  const arDominant = hasAr && enLetters === 0;
-
-  if (arDominant) {
-    // Pure Arabic text: render directly with Arabic font (no BiDi needed)
-    doc.font(FONT_AR).fontSize(sz).fillColor(color);
-    arText(doc, text, x, y, w);
-    return y + sz + 2;
-  } else if (hasAr) {
-    // Mixed Arabic+English: split into word-groups and render each with correct font
-    renderMixedRTL(doc, text, x, y, w, sz, color);
-    return y + sz + 2;
-  } else {
-    doc.font(FONT_EN).fontSize(sz).fillColor(color);
-    enText(doc, text, x, y, w);
-    return y + sz + 2;
-  }
+  return y + drawBodyValue(doc, text, x, y, w, sz, color);
 }
 
 /**
@@ -264,14 +285,9 @@ function tableRow(
   sz = 8.5
 ): number {
   const valW = totalW - labelW;
-  const hasAr = /[\u0600-\u06FF]/.test(value);
-  const arCharsRow = (value.match(/[\u0600-\u06FF]/g) || []).length;
-  const enLettersRow = (value.match(/[a-zA-Z]/g) || []).length;
-  const arDominantRow = hasAr && arCharsRow > enLettersRow;
-  const mixed = hasAr && !arDominantRow;
   const effectiveSz = sz;
-  // For Arabic text, increase row height to accommodate proper text rendering
-  const rh = (arDominantRow || mixed ? 3 : 1) * (effectiveSz + 4) + 10;
+  const cellPadY = 5;
+  const rh = tableRowHeight(doc, value, labelW, totalW, effectiveSz);
 
   // Background
   doc.save().rect(x, y, totalW, rh).fill(shade ? GRAY_ROW : WHITE).restore();
@@ -296,9 +312,6 @@ function tableRow(
     enText(doc, enPart, x + 5, labelY, labelW - 10);
     // AR part
     if (arPart) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (doc as any).text(arPart, x + 5, labelY + lineH + 2, { align: "right", features: AR_FEAT, width: labelW - 10, lineBreak: false,
-        font: FONT_AR_B, fontSize: sz - 1, fillColor: BLACK });
       doc.font(FONT_AR_B).fontSize(sz - 1).fillColor(BLACK);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (doc as any).text(arPart, x + 5, labelY + lineH + 2, { align: "right", features: AR_FEAT, width: labelW - 10, lineBreak: false });
@@ -308,16 +321,15 @@ function tableRow(
     enText(doc, label, x + 5, y + (rh / 2) - (effectiveSz / 2), labelW - 10);
   }
 
-  // Value — handle Arabic text specially
-  if (arDominantRow) {
-    // Pure Arabic: use Arabic font directly
-    doc.font(FONT_AR).fontSize(sz).fillColor(BLACK);
-    arText(doc, value || "—", x + labelW, y + 5, valW - 10);
-  } else {
-    renderValue(doc, value || "—", x + labelW + 5, y + (rh / 2) - (effectiveSz / 2), valW - 10, sz, BLACK);
-  }
+  // Value — a single renderer keeps Arabic, English and bilingual text safe.
+  drawBodyValue(doc, value || "—", x + labelW + 5, y + cellPadY, valW - 10, sz, BLACK);
 
   return y + rh;
+}
+
+function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, totalW: number, sz: number): number {
+  const valW = totalW - labelW;
+  return Math.max(20, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -336,6 +348,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const doc = new PDFDocument({
       size: "A4",
       margins: { top: 40, bottom: 55, left: 45, right: 45 },
+      bufferPages: true,
       info: {
         Title: `SanctionCheck Match Details Report — ${record.nameEn}`,
         Author: "Yemen Sanctions Platform",
@@ -351,6 +364,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const PH = doc.page.height;  // 841.89
     const X  = 45;
     const W  = PW - 90;          // 505.28
+    const CONTENT_BOTTOM = PH - 88;
     let y = 40;
 
     // -- HEADER -----------------------------------------------------------------
@@ -378,6 +392,33 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     enText(doc, "WORLD-CHECK RECORD UID:", X, y, 175);
     doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLUE);
     enText(doc, uid, X + 170, y, 200);
+
+    /** Start an explicit continuation page instead of allowing an accidental overflow. */
+    const startContinuationPage = (sectionTitle: string) => {
+      doc.addPage();
+      y = 40;
+      doc.font(FONT_EN_B).fontSize(10).fillColor(BLUE);
+      enText(doc, "Yemen", X, y, 70);
+      doc.font(FONT_EN_B).fontSize(10).fillColor(NAVY);
+      enText(doc, "Sanctions", X + 35, y, 100);
+      doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
+      arText(doc, "منصة العقوبات اليمنية", X, y + 1, W);
+      y += 16;
+      doc.font(FONT_EN_B).fontSize(8).fillColor(GRAY_MID);
+      enText(doc, `SANCTIONCHECK MATCH DETAILS REPORT — ${uid}`, X, y, W);
+      y += 13;
+      hr(doc, y, X, X + W, BORDER, 0.4);
+      y += 8;
+      const titleParts = sectionTitle.split(" / ");
+      const continuationTitle = titleParts.length === 2
+        ? `${titleParts[0]} (cont.) / ${titleParts[1]}`
+        : `${sectionTitle} (cont.)`;
+      y = sectionHead(doc, continuationTitle, X, y, W);
+    };
+
+    const ensureSpace = (requiredHeight: number, sectionTitle: string) => {
+      if (y + requiredHeight > CONTENT_BOTTOM) startContinuationPage(sectionTitle);
+    };
 
     y += 16;
     hr(doc, y, X, X + W, BORDER, 0.4);
@@ -446,7 +487,12 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     // Name row
     const submittedName = (req.query.submittedName as string) || record.nameEn || "—";
     const hasArName = isAr(record.nameAr || "");
-    const nRH = hasArName ? 32 : 22;
+    const wcName = record.nameEn || record.nameAr || "—";
+    const submittedH = bodyValueHeight(doc, submittedName, c2 - 10, 8.5)
+      + (hasArName ? bodyValueHeight(doc, record.nameAr!, c2 - 10, 8) + 2 : 0);
+    const worldCheckH = bodyValueHeight(doc, wcName, c3 - 10, 8.5)
+      + (hasArName && wcName !== record.nameAr ? bodyValueHeight(doc, record.nameAr!, c3 - 10, 8) + 2 : 0);
+    const nRH = Math.max(24, Math.ceil(Math.max(submittedH, worldCheckH) + 10));
 
     doc.save().rect(X, y, W, nRH).fill(GRAY_ROW).restore();
     doc.save().strokeColor(BORDER).lineWidth(0.3)
@@ -458,37 +504,20 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLACK);
     enText(doc, "Name", X + 5, y + (nRH / 2) - 4, c1 - 10);
 
-    // Submitted name — use Arabic font if Arabic-only
-    if (isAr(submittedName) && !/[a-zA-Z0-9]/.test(submittedName)) {
-      doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
-      arText(doc, submittedName, X + c1, y + 5, c2 - 5);
-    } else {
-      doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
-      enText(doc, submittedName, X + c1 + 5, y + 5, c2 - 10);
-    }
+    // Submitted name — central renderer supports Arabic, English and bilingual values.
+    const submittedDrawH = drawBodyValue(doc, submittedName, X + c1 + 5, y + 5, c2 - 10, 8.5, BLACK);
     if (hasArName) {
-      doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
-      arText(doc, record.nameAr!, X + c1, y + 17, c2 - 5);
+      drawBodyValue(doc, record.nameAr!, X + c1 + 5, y + 7 + submittedDrawH, c2 - 10, 8, GRAY_MID);
     }
 
-    // World-Check name (blue bold) — use Arabic font if Arabic-only
-    const wcName = record.nameEn || record.nameAr || "—";
-    if (isAr(wcName) && !/[a-zA-Z0-9]/.test(wcName)) {
-      doc.font(FONT_AR_B).fontSize(8.5).fillColor(BLUE);
-      arText(doc, wcName, X + c1 + c2, y + 5, c3 - 5);
-    } else {
-      doc.font(FONT_EN_B).fontSize(8.5).fillColor(BLUE);
-      enText(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10);
-    }
-    if (hasArName) {
-      doc.font(FONT_AR).fontSize(8).fillColor(GRAY_MID);
-      arText(doc, record.nameAr!, X + c1 + c2, y + 17, c3 - 5);
+    // World-Check name (blue)
+    const worldCheckDrawH = drawBodyValue(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10, 8.5, BLUE);
+    if (hasArName && wcName !== record.nameAr) {
+      drawBodyValue(doc, record.nameAr!, X + c1 + c2 + 5, y + 7 + worldCheckDrawH, c3 - 10, 8, GRAY_MID);
     }
     y += nRH + 14;
 
     // -- KEY DATA --------------------------------------------------------------
-    y = sectionHead(doc, "KEY DATA", X, y, W);
-
     const LW = 130;
     const typeMap: Record<string, string> = {
       individual: "Individual", organisation: "Organisation",
@@ -498,9 +527,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const keyRows: [string, string][] = [
       ["Dataset",       record.issuingBody || "—"],
       ["Category",      record.entityType ? (typeMap[record.entityType] || record.entityType) : "—"],
-      ["Sub-Category",  record.entityType === "individual" ? "Individual" : (record.entityType || "—")],
       ["Name",          record.nameEn || record.nameAr || "—"],
-      ["Gender",        "—"],
       ["Citizenship",   record.nationality || "—"],
       ["Date of Birth", record.dateOfBirth || "—"],
       ["Place of Birth",record.placeOfBirth || "—"],
@@ -508,8 +535,12 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       ["Issuing Body",  record.issuingBody || "—"],
     ];
 
+    ensureSpace(16 + tableRowHeight(doc, keyRows[0][1], LW, W, 8.5), "KEY DATA");
+    y = sectionHead(doc, "KEY DATA", X, y, W);
+
     let shade = false;
     for (const [label, value] of keyRows) {
+      ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "KEY DATA");
       y = tableRow(doc, label, value, X, y, LW, W, shade, 8.5);
       shade = !shade;
     }
@@ -518,36 +549,24 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- LISTING REASON --------------------------------------------------------
     if (record.listingReason) {
-      y = sectionHead(doc, "LISTING REASON", X, y, W);
       const lrText = record.listingReason;
-      const hasArLR = /[\u0600-\u06FF]/.test(lrText);
-      // For Arabic text, use pure Arabic rendering to avoid BiDi issues
-      if (hasArLR) {
-        doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
-        const lrH = 28;
-        doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
-        // Use arText for proper Arabic rendering
-        arText(doc, lrText, X, y + 5, W - 10);
-        y += lrH + 14;
-      } else {
-        const hasEnLR = /[a-zA-Z0-9]/.test(lrText);
-        const mixed = hasArLR && hasEnLR;
-        const lrH = (mixed ? 2 : 1) * 14 + 12;
-        doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
-        renderValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
-        y += lrH + 14;
-      }
+      const lrH = Math.max(24, Math.ceil(bodyValueHeight(doc, lrText, W - 10, 8.5)) + 10);
+      ensureSpace(16 + lrH + 14, "LISTING REASON");
+      y = sectionHead(doc, "LISTING REASON", X, y, W);
+      doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
+      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
+      drawBodyValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
+      y += lrH + 14;
     }
 
     // -- LEGAL BASIS -----------------------------------------------------------
     if (record.legalBasis) {
+      const lbH = Math.max(24, Math.ceil(bodyValueHeight(doc, record.legalBasis, W - 10, 8.5)) + 10);
+      ensureSpace(16 + lbH + 14, "LEGAL BASIS");
       y = sectionHead(doc, "LEGAL BASIS", X, y, W);
-      const lbH = 24;
       doc.save().rect(X, y, W, lbH).fill(GRAY_ROW).restore();
       doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lbH).stroke().restore();
-      renderValue(doc, record.legalBasis, X + 5, y + 7, W - 10, 8.5, BLACK);
+      drawBodyValue(doc, record.legalBasis, X + 5, y + 5, W - 10, 8.5, BLACK);
       y += lbH + 14;
     }
 
@@ -559,9 +578,18 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         .filter(n => n.length > 0);
 
       if (clean.length > 0) {
-        y = sectionHead(doc, "ALIASES", X, y, W);
-
         const aLW = W / 2;
+        const latinNames  = clean.filter(n => !isAr(n));
+        const arabicNames = clean.filter(n => isAr(n));
+        const firstAliasH = Math.max(
+          18,
+          Math.ceil(Math.max(
+            latinNames?.[0] ? bodyValueHeight(doc, latinNames[0], aLW - 10, 8.5) : 0,
+            arabicNames?.[0] ? bodyValueHeight(doc, arabicNames[0], aLW - 10, 8.5) : 0,
+          )) + 10,
+        );
+        ensureSpace(32 + firstAliasH, "ALIASES");
+        y = sectionHead(doc, "ALIASES", X, y, W);
         doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
         doc.save().strokeColor(BORDER).lineWidth(0.3)
           .rect(X, y, W, 16).stroke()
@@ -571,13 +599,17 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         enText(doc, "Aliases",                X + 5,       y + 4, aLW - 10);
         enText(doc, "Native Character Names", X + aLW + 5, y + 4, aLW - 10);
         y += 16;
-
-        const latinNames  = clean.filter(n => !isAr(n));
-        const arabicNames = clean.filter(n => isAr(n));
         const maxR = Math.max(latinNames.length, arabicNames.length, 1);
 
         for (let i = 0; i < maxR; i++) {
-          const rh = 18;
+          const rh = Math.max(
+            18,
+            Math.ceil(Math.max(
+              latinNames[i] ? bodyValueHeight(doc, latinNames[i], aLW - 10, 8.5) : 0,
+              arabicNames[i] ? bodyValueHeight(doc, arabicNames[i], aLW - 10, 8.5) : 0,
+            )) + 10,
+          );
+          ensureSpace(rh, "ALIASES");
           doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
           doc.save().strokeColor(BORDER).lineWidth(0.3)
             .rect(X, y, W, rh).stroke()
@@ -585,12 +617,10 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
             .restore();
 
           if (latinNames[i]) {
-            doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK);
-            enText(doc, latinNames[i], X + 5, y + 5, aLW - 10);
+            drawBodyValue(doc, latinNames[i], X + 5, y + 5, aLW - 10, 8.5, BLACK);
           }
           if (arabicNames[i]) {
-            doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK);
-            arText(doc, arabicNames[i], X + aLW, y + 5, aLW - 5);
+            drawBodyValue(doc, arabicNames[i], X + aLW + 5, y + 5, aLW - 10, 8.5, BLACK);
           }
           y += rh;
         }
@@ -625,27 +655,15 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- ADDITIONAL INFORMATION ------------------------------------------------
     const addlRows: [string, string][] = [
-      ["Nationality", mergedNationality || "—"],
-      ["Date of Birth", mergedDob || "—"],
-      ["Place of Birth", mergedPob || "—"],
-      ["Reference Number", mergedRef || "—"],
       ["Action Taken", record.actionTaken || "—"],
     ].filter(([, v]) => v && v !== "—") as [string, string][];
 
     if (addlRows.length > 0) {
+      ensureSpace(16 + tableRowHeight(doc, addlRows[0][1], LW, W, 8.5), "ADDITIONAL INFORMATION");
       y = sectionHead(doc, "ADDITIONAL INFORMATION", X, y, W);
       let shade2 = false;
       for (const [label, value] of addlRows) {
-        // Check if row will overflow the page
-        const hasArVal = /[\u0600-\u06FF]/.test(value);
-        const arCharsVal = (value.match(/[\u0600-\u06FF]/g) || []).length;
-        const enLettersVal = (value.match(/[a-zA-Z]/g) || []).length;
-        const mixedVal = hasArVal && !(hasArVal && arCharsVal > enLettersVal);
-        const rowH = (mixedVal ? 2 : 1) * (8.5 + 4) + 10;
-        if (y + rowH > PH - 80) {
-          doc.addPage();
-          y = 40;
-        }
+        ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "ADDITIONAL INFORMATION");
         y = tableRow(doc, label, value, X, y, LW, W, shade2, 8.5);
         shade2 = !shade2;
       }
@@ -659,23 +677,38 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         .map(n => n.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, "").trim())
         .filter(n => n.length > 0);
       if (cleanAll.length > 0) {
-        y = sectionHead(doc, "ALIASES", X, y, W);
         const aLW2 = W / 2;
+        const latinAll = cleanAll.filter(n => !isAr(n));
+        const arabicAll = cleanAll.filter(n => isAr(n));
+        const firstAliasH = Math.max(
+          18,
+          Math.ceil(Math.max(
+            latinAll?.[0] ? bodyValueHeight(doc, latinAll[0], aLW2 - 10, 8.5) : 0,
+            arabicAll?.[0] ? bodyValueHeight(doc, arabicAll[0], aLW2 - 10, 8.5) : 0,
+          )) + 10,
+        );
+        ensureSpace(32 + firstAliasH, "ALIASES");
+        y = sectionHead(doc, "ALIASES", X, y, W);
         doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
         doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, 16).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + 16).stroke().restore();
         doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
         enText(doc, "Aliases", X + 5, y + 4, aLW2 - 10);
         enText(doc, "Native Character Names", X + aLW2 + 5, y + 4, aLW2 - 10);
         y += 16;
-        const latinAll = cleanAll.filter(n => !isAr(n));
-        const arabicAll = cleanAll.filter(n => isAr(n));
         const maxR2 = Math.max(latinAll.length, arabicAll.length, 1);
         for (let i = 0; i < maxR2; i++) {
-          const rh = 18;
+          const rh = Math.max(
+            18,
+            Math.ceil(Math.max(
+              latinAll[i] ? bodyValueHeight(doc, latinAll[i], aLW2 - 10, 8.5) : 0,
+              arabicAll[i] ? bodyValueHeight(doc, arabicAll[i], aLW2 - 10, 8.5) : 0,
+            )) + 10,
+          );
+          ensureSpace(rh, "ALIASES");
           doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
           doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rh).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + rh).stroke().restore();
-          if (latinAll[i]) { doc.font(FONT_EN).fontSize(8.5).fillColor(BLACK); enText(doc, latinAll[i], X + 5, y + 5, aLW2 - 10); }
-          if (arabicAll[i]) { doc.font(FONT_AR).fontSize(8.5).fillColor(BLACK); arText(doc, arabicAll[i], X + aLW2, y + 5, aLW2 - 5); }
+          if (latinAll[i]) drawBodyValue(doc, latinAll[i], X + 5, y + 5, aLW2 - 10, 8.5, BLACK);
+          if (arabicAll[i]) drawBodyValue(doc, arabicAll[i], X + aLW2 + 5, y + 5, aLW2 - 10, 8.5, BLACK);
           y += rh;
         }
         y += 10;
@@ -684,150 +717,62 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- ADDRESSES -------------------------------------------------------------
     if (parsed.addresses.length > 0) {
+      const firstAddressH = Math.max(22, Math.ceil(bodyValueHeight(doc, parsed.addresses[0], W - 10, 8)) + 10);
+      ensureSpace(16 + firstAddressH, "ADDRESSES");
       y = sectionHead(doc, `ADDRESSES (${parsed.addresses.length})`, X, y, W);
       for (let i = 0; i < parsed.addresses.length; i++) {
         const addr = parsed.addresses[i];
-        const addrH = 22;
+        const addrH = Math.max(22, Math.ceil(bodyValueHeight(doc, addr, W - 10, 8)) + 10);
+        ensureSpace(addrH, "ADDRESSES");
         doc.save().rect(X, y, W, addrH).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
         doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, addrH).stroke().restore();
-        renderValue(doc, addr, X + 5, y + 6, W - 10, 8, BLACK);
+        drawBodyValue(doc, addr, X + 5, y + 5, W - 10, 8, BLACK);
         y += addrH;
       }
       y += 14;
     }
     // -- NOTES ---------------------------------------------------------------------------
     if (mergedNotes) {
-      // إضافة صفحة جديدة إذا لم يكن هناك مساحة كافية
-      if (y + 60 > PH - 80) {
-        doc.addPage();
-        y = 40;
-      }
-      y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
       const noteSz = 8.5;
-      const noteW = W - 20;
-      const noteLines = mergedNotes.split('\n').filter(l => l.trim());
-      const lineH = noteSz + 6;
-
-      // Helper: measure width of a word (Arabic or English)
-      const wordWidth = (word: string, sz: number): number => {
-        const arChars = (word.match(/[\u0600-\u06FF]/g) || []).length;
-        const enChars = (word.match(/[a-zA-Z0-9]/g) || []).length;
-        const isAr = arChars > 0;
-        doc.font(isAr ? FONT_AR : FONT_EN).fontSize(sz);
-        return doc.widthOfString(word) + 4;
-      };
-
-      // Helper: split a long mixed text into visual lines that fit within maxW
-      const wrapMixedToLines = (text: string, sz: number, maxW: number): string[] => {
-        const words = text.split(' ').filter(Boolean);
-        const lines: string[] = [];
-        let current = '';
-        let currentW = 0;
-        for (const word of words) {
-          const wW = wordWidth(word, sz) + 4; // +4 for space
-          if (current === '') {
-            current = word;
-            currentW = wW;
-          } else if (currentW + wW <= maxW) {
-            current += ' ' + word;
-            currentW += wW;
-          } else {
-            lines.push(current);
-            current = word;
-            currentW = wW;
-          }
-        }
-        if (current) lines.push(current);
-        return lines.length > 0 ? lines : [text];
-      };
+      const noteLines = mergedNotes.split(/\n+/).map(l => l.trim()).filter(Boolean);
+      if (y + 42 > CONTENT_BOTTOM) startContinuationPage("NOTES / ملاحظات");
+      else y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
 
       for (let li = 0; li < noteLines.length; li++) {
-        const line = noteLines[li].trim();
-        if (!line) continue;
-
-        const hasArLine = /[\u0600-\u06FF]/.test(line);
-        const arCharsLine = (line.match(/[\u0600-\u06FF]/g) || []).length;
-        const enLettersLine = (line.match(/[a-zA-Z]/g) || []).length;
-        const arDomLine = hasArLine && arCharsLine > enLettersLine;
-        const isMixedLine = hasArLine && enLettersLine > 0;
-
-        // For mixed text: split into visual lines using EN font width estimation
-        // For Arabic-dominant: use PDFKit's built-in wrapping
-        // For English-only: use PDFKit's built-in wrapping
-        let subLines: string[];
-        if (isMixedLine) {
-          // Split using per-word width measurement for accurate mixed-text wrapping
-          subLines = wrapMixedToLines(line, noteSz, noteW - 10);
-        } else {
-          subLines = [line];
-        }
-
-        for (let si = 0; si < subLines.length; si++) {
-          const subLine = subLines[si];
-          const rowH = lineH + 4;
-
-          // صفحة جديدة إذا لزم
-          if (y + rowH > PH - 80) {
-            doc.addPage();
-            y = 40;
-            y = sectionHead(doc, "NOTES (cont.) / ملاحظات", X, y, W);
-          }
-
-          // خلفية متناوبة
-          const bgIdx = li + si;
-          doc.save().rect(X, y, W, rowH).fill(bgIdx % 2 === 0 ? GRAY_ROW : WHITE).restore();
-          doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
-
-          // رسم النص مع الخط الصحيح
-          if (isMixedLine) {
-            // نص مختلط: استخدم renderMixedRTL لرسم كل كلمة بالخط المناسب
-            // X=بداية الخلية, W=عرضها الكامل لضمان بدء النص من الحد الأيمن الصحيح
-            renderMixedRTL(doc, subLine, X, y + 5, W, noteSz, GRAY_MID);
-          } else if (arDomLine) {
-            doc.font(FONT_AR).fontSize(noteSz).fillColor(GRAY_MID);
-            (doc as any).text(subLine, X + 5, y + 5, { align: "right", features: AR_FEAT, width: noteW, lineBreak: true });
-          } else {
-            doc.font(FONT_EN).fontSize(noteSz).fillColor(GRAY_MID);
-            doc.text(subLine, X + 5, y + 5, { align: "left", width: noteW, lineBreak: true });
-          }
-          y += rowH;
-        }
+        const line = noteLines[li];
+        const rowH = Math.max(22, Math.ceil(bodyValueHeight(doc, line, W - 10, noteSz)) + 10);
+        ensureSpace(rowH, "NOTES / ملاحظات");
+        doc.save().rect(X, y, W, rowH).fill(li % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
+        drawBodyValue(doc, line, X + 5, y + 5, W - 10, noteSz, GRAY_MID);
+        y += rowH;
       }
       y += 14;
     }
 
-    // -- FOOTER -- draw at absolute position at bottom of page --
-    // CRITICAL: Set bottom margin to 0 BEFORE drawing footer.
-    // This prevents PDFKit from auto-adding a new page when the cursor
-    // goes below the original bottom margin boundary.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (doc.page as any).margins.bottom = 0;
-
+    // -- FOOTER -- apply the current footer style on every generated page.
+    const pageRange = doc.bufferedPageRange();
     const footerY = PH - 78;
     const footerContentW = logoExists ? W - 65 : W;
-
-    hr(doc, footerY, X, X + W, GRAY_MID, 0.4);
-
-    // Disclaimer line 1 (English) — centered
-    doc.font(FONT_EN).fontSize(7.5).fillColor(GRAY_LT);
-    enText(doc,
-      "This report is issued by Yemen Sanctions Platform. For compliance and due diligence purposes only.",
-      X, footerY + 7, footerContentW, { align: "center" }
-    );
-
-    // Disclaimer line 2 (Arabic) — right-aligned
-    doc.font(FONT_AR).fontSize(7.5).fillColor(GRAY_LT);
-    arText(doc,
-      "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.",
-      X, footerY + 20, footerContentW
-    );
-
-    // Logo bottom-right
-    if (logoExists) {
-      doc.image(LOGO_PATH, X + W - 55, footerY - 3, { width: 52, height: 42 });
-    } else {
-      doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
-      arText(doc, "منصة العقوبات اليمنية", X, footerY + 12, W);
+    for (let pageIndex = 0; pageIndex < pageRange.count; pageIndex++) {
+      doc.switchToPage(pageIndex);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc.page as any).margins.bottom = 0;
+      hr(doc, footerY, X, X + W, GRAY_MID, 0.4);
+      doc.font(FONT_EN).fontSize(7.5).fillColor(GRAY_LT);
+      enText(doc,
+        "This report is issued by Yemen Sanctions Platform. For compliance and due diligence purposes only.",
+        X, footerY + 7, footerContentW, { align: "center" }
+      );
+      drawBodyValue(doc, "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.", X, footerY + 20, footerContentW, 7.5, GRAY_LT);
+      doc.font(FONT_EN).fontSize(7).fillColor(GRAY_LT);
+      enText(doc, `Page ${pageIndex + 1} of ${pageRange.count}`, X, footerY + 34, footerContentW, { align: "center" });
+      if (logoExists) {
+        doc.image(LOGO_PATH, X + W - 55, footerY - 3, { width: 52, height: 42 });
+      } else {
+        doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
+        arText(doc, "منصة العقوبات اليمنية", X, footerY + 12, W);
+      }
     }
 
     doc.end();
