@@ -227,6 +227,22 @@ export function parseRawNotesForPdf(raw: string | null | undefined) {
   };
 }
 
+/**
+ * Builds the listing-context rows strictly from fields stored on the sanctions
+ * record. Missing source fields are omitted rather than replaced with generated text.
+ */
+export function buildListingContextRows(record: {
+  listingReason?: string | null;
+  legalBasis?: string | null;
+  issuingBody?: string | null;
+}): [string, string][] {
+  return [
+    ["Reason for Listing / سبب الإدراج", record.listingReason || ""],
+    ["Legal Basis / الأساس القانوني", record.legalBasis || ""],
+    ["Issuing Body / الجهة المُصدرة", record.issuingBody || ""],
+  ].filter(([, value]) => Boolean(value.trim())) as [string, string][];
+}
+
 /** Section heading — bold uppercase.
  * If the title contains Arabic characters, the Arabic part is rendered with FONT_AR_B
  * and the English part with FONT_EN_B so no boxes appear.
@@ -329,7 +345,8 @@ function tableRow(
 
 function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, totalW: number, sz: number): number {
   const valW = totalW - labelW;
-  return Math.max(20, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
+  // 24pt keeps bilingual labels on two lines inside their own cell without clipping.
+  return Math.max(24, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -466,7 +483,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     y += mH + 16;
 
     // -- CASE AND COMPARISON DATA ----------------------------------------------
-    y = sectionHead(doc, "CASE AND COMPARISON DATA", X, y, W);
+    y = sectionHead(doc, "CASE AND COMPARISON DATA / بيانات المقارنة", X, y, W);
 
     const c1 = 70;
     const c2 = (W - c1) / 2;
@@ -535,39 +552,31 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       ["Issuing Body",  record.issuingBody || "—"],
     ];
 
-    ensureSpace(16 + tableRowHeight(doc, keyRows[0][1], LW, W, 8.5), "KEY DATA");
-    y = sectionHead(doc, "KEY DATA", X, y, W);
+    ensureSpace(16 + tableRowHeight(doc, keyRows[0][1], LW, W, 8.5), "KEY DATA / البيانات الجوهرية");
+    y = sectionHead(doc, "KEY DATA / البيانات الجوهرية", X, y, W);
 
     let shade = false;
     for (const [label, value] of keyRows) {
-      ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "KEY DATA");
+      ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "KEY DATA / البيانات الجوهرية");
       y = tableRow(doc, label, value, X, y, LW, W, shade, 8.5);
       shade = !shade;
     }
 
     y += 14;
 
-    // -- LISTING REASON --------------------------------------------------------
-    if (record.listingReason) {
-      const lrText = record.listingReason;
-      const lrH = Math.max(24, Math.ceil(bodyValueHeight(doc, lrText, W - 10, 8.5)) + 10);
-      ensureSpace(16 + lrH + 14, "LISTING REASON");
-      y = sectionHead(doc, "LISTING REASON", X, y, W);
-      doc.save().rect(X, y, W, lrH).fill(GRAY_ROW).restore();
-      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lrH).stroke().restore();
-      drawBodyValue(doc, lrText, X + 5, y + 5, W - 10, 8.5, BLACK);
-      y += lrH + 14;
-    }
-
-    // -- LEGAL BASIS -----------------------------------------------------------
-    if (record.legalBasis) {
-      const lbH = Math.max(24, Math.ceil(bodyValueHeight(doc, record.legalBasis, W - 10, 8.5)) + 10);
-      ensureSpace(16 + lbH + 14, "LEGAL BASIS");
-      y = sectionHead(doc, "LEGAL BASIS", X, y, W);
-      doc.save().rect(X, y, W, lbH).fill(GRAY_ROW).restore();
-      doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, lbH).stroke().restore();
-      drawBodyValue(doc, record.legalBasis, X + 5, y + 5, W - 10, 8.5, BLACK);
-      y += lbH + 14;
+    // -- LISTING CONTEXT -------------------------------------------------------
+    // This section is populated only with factual fields present in the source record.
+    const listingContextRows = buildListingContextRows(record);
+    if (listingContextRows.length > 0) {
+      ensureSpace(16 + tableRowHeight(doc, listingContextRows[0][1], LW, W, 8.5), "LISTING CONTEXT / سياق الإدراج");
+      y = sectionHead(doc, "LISTING CONTEXT / سياق الإدراج", X, y, W);
+      let contextShade = false;
+      for (const [label, value] of listingContextRows) {
+        ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "LISTING CONTEXT / سياق الإدراج");
+        y = tableRow(doc, label, value, X, y, LW, W, contextShade, 8.5);
+        contextShade = !contextShade;
+      }
+      y += 14;
     }
 
     // -- ALIASES ---------------------------------------------------------------

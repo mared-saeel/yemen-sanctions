@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRawNotesForPdf } from "./pdf-report";
+import { buildListingContextRows, parseRawNotesForPdf } from "./pdf-report";
 
 describe("PDF report note parsing", () => {
   it("retains the full free-form bilingual note without dropping Arabic or Latin text", () => {
@@ -19,5 +19,18 @@ describe("PDF report note parsing", () => {
     expect(parsed.dateOfBirth).toBe("01 Jan 1980");
     expect(parsed.referenceNumber).toBe("SC-1042");
     expect(parsed.notes).toBe("نص عربي مع reference SC-1042 ويجب عرضه كاملاً");
+  });
+
+  it("builds listing context only from available source-record fields", () => {
+    expect(buildListingContextRows({
+      listingReason: "عقوبات العراق IRAQ2",
+      legalBasis: "UID: 7843",
+      issuingBody: "OFAC",
+    })).toEqual([
+      ["Reason for Listing / سبب الإدراج", "عقوبات العراق IRAQ2"],
+      ["Legal Basis / الأساس القانوني", "UID: 7843"],
+      ["Issuing Body / الجهة المُصدرة", "OFAC"],
+    ]);
+    expect(buildListingContextRows({ listingReason: null, legalBasis: "", issuingBody: undefined })).toEqual([]);
   });
 });
