@@ -246,6 +246,17 @@ export function parseRawNotesForPdf(raw: string | null | undefined) {
  * Builds the listing-context rows strictly from fields stored on the sanctions
  * record. Missing source fields are omitted rather than replaced with generated text.
  */
+export function sanitizeListingContextTextForPdf(value: string | null | undefined): string {
+  if (!value) return "";
+
+  // Preserve the source content while removing isolated or enclosing brackets.
+  // This prevents empty "( )" artifacts from disrupting mixed RTL/LTR text.
+  return String(value)
+    .replace(/[()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildListingContextRows(record: {
   listingReason?: string | null;
   legalBasis?: string | null;
@@ -255,9 +266,9 @@ export function buildListingContextRows(record: {
   // DATA. Arabic remains in the section title; duplicating it in the narrow
   // column caused short labels to wrap and become visually misaligned.
   return [
-    ["Reason for Listing", record.listingReason || ""],
-    ["Legal Basis", record.legalBasis || ""],
-    ["Issuing Body", record.issuingBody || ""],
+    ["Reason for Listing", sanitizeListingContextTextForPdf(record.listingReason)],
+    ["Legal Basis", sanitizeListingContextTextForPdf(record.legalBasis)],
+    ["Issuing Body", sanitizeListingContextTextForPdf(record.issuingBody)],
   ].filter(([, value]) => Boolean(value.trim())) as [string, string][];
 }
 

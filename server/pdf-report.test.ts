@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildListingContextRows, parseRawNotesForPdf, tokenizeMixedTextForPdf } from "./pdf-report";
+import { buildListingContextRows, parseRawNotesForPdf, sanitizeListingContextTextForPdf, tokenizeMixedTextForPdf } from "./pdf-report";
 
 describe("PDF report note parsing", () => {
   it("retains the full free-form bilingual note without dropping Arabic or Latin text", () => {
@@ -41,5 +41,10 @@ describe("PDF report note parsing", () => {
       { text: "معينون", isArabic: true },
       { text: "عالميًا", isArabic: true },
     ]);
+  });
+
+  it("removes bracket artifacts while keeping listing-context content readable", () => {
+    expect(sanitizeListingContextTextForPdf("SDGT ( ) إرهابيون معينون عالميًا")).toBe("SDGT إرهابيون معينون عالميًا");
+    expect(sanitizeListingContextTextForPdf("(SDGT) إرهابيون معينون عالميًا")).toBe("SDGT إرهابيون معينون عالميًا");
   });
 });

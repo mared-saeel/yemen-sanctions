@@ -29,7 +29,7 @@ describe("PDF report rendering", () => {
       nameAr: "سويد وأولاده للصرافة",
       entityType: "organisation",
       listingDate: "2024-06-12",
-      listingReason: "SDGT/إرهابيون معينون عالميًا",
+      listingReason: "SDGT ( ) إرهابيون معينون عالميًا",
       issuingBody: "Official Sanctions Dataset",
       legalBasis: "قرار إداري تجريبي للتأكد من دعم العربية والإنجليزية.",
       actionTaken: "تتطلب النتيجة مراجعة يدوية قبل اتخاذ أي إجراء.",
