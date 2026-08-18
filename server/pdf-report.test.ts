@@ -23,15 +23,31 @@ describe("PDF report note parsing", () => {
 
   it("builds listing context only from available source-record fields", () => {
     expect(buildListingContextRows({
-      listingReason: "عقوبات العراق IRAQ2",
+      listingReason: "IRAQ2 (عقوبات العراق)",
       legalBasis: "UID: 7843",
       issuingBody: "OFAC",
     })).toEqual([
-      ["Reason for Listing", "عقوبات العراق IRAQ2"],
-      ["Legal Basis", "UID: 7843"],
+      ["Listing Programme", "IRAQ2"],
+      ["Reason for Listing", "عقوبات العراق"],
+      ["Source Reference", "UID: 7843"],
       ["Issuing Body", "OFAC"],
     ]);
     expect(buildListingContextRows({ listingReason: null, legalBasis: "", issuingBody: undefined })).toEqual([]);
+  });
+
+  it("keeps a legal basis distinct from source references", () => {
+    expect(buildListingContextRows({
+      listingReason: "SDGT إرهابيون معينون عالميًا",
+      legalBasis: "EU Council Regulation 881/2002",
+      referenceNumber: "REF-8821",
+      issuingBody: "European Union",
+    })).toEqual([
+      ["Listing Programme", "SDGT"],
+      ["Reason for Listing", "إرهابيون معينون عالميًا"],
+      ["Legal Basis", "EU Council Regulation 881/2002"],
+      ["Source Reference", "REF-8821"],
+      ["Issuing Body", "European Union"],
+    ]);
   });
 
   it("separates a Latin abbreviation from adjacent Arabic text for visual PDF rendering", () => {

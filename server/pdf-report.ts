@@ -257,19 +257,47 @@ export function sanitizeListingContextTextForPdf(value: string | null | undefine
     .trim();
 }
 
+function isTechnicalSourceReference(value: string): boolean {
+  return /^(?:UID|ID|REF(?:ERENCE)?|RECORD)\s*[:#-]\s*[A-Z0-9._-]+$/i.test(value.trim());
+}
+
+function splitListingProgramme(value: string): { programme: string | null; reason: string } {
+  const match = value.match(/^([A-Z][A-Z0-9._-]{1,31})(?:\s*[/:\-]\s*|\s+)(.+)$/);
+  if (!match) return { programme: null, reason: value };
+  return { programme: match[1], reason: match[2].trim() };
+}
+
 export function buildListingContextRows(record: {
   listingReason?: string | null;
   legalBasis?: string | null;
   issuingBody?: string | null;
+  referenceNumber?: string | null;
 }): [string, string][] {
   // The compact label column follows the same English-only convention as KEY
   // DATA. Arabic remains in the section title; duplicating it in the narrow
   // column caused short labels to wrap and become visually misaligned.
-  return [
-    ["Reason for Listing", sanitizeListingContextTextForPdf(record.listingReason)],
-    ["Legal Basis", sanitizeListingContextTextForPdf(record.legalBasis)],
-    ["Issuing Body", sanitizeListingContextTextForPdf(record.issuingBody)],
-  ].filter(([, value]) => Boolean(value.trim())) as [string, string][];
+  const rows: [string, string][] = [];
+  const listingReason = sanitizeListingContextTextForPdf(record.listingReason);
+  const legalBasis = sanitizeListingContextTextForPdf(record.legalBasis);
+  const referenceNumber = sanitizeListingContextTextForPdf(record.referenceNumber);
+
+  if (listingReason) {
+    const { programme, reason } = splitListingProgramme(listingReason);
+    if (programme) rows.push(["Listing Programme", programme]);
+    if (reason) rows.push(["Reason for Listing", reason]);
+  }
+
+  if (legalBasis) {
+    rows.push([isTechnicalSourceReference(legalBasis) ? "Source Reference" : "Legal Basis", legalBasis]);
+  }
+
+  if (referenceNumber && referenceNumber !== legalBasis) {
+    rows.push(["Source Reference", referenceNumber]);
+  }
+
+  const issuingBody = sanitizeListingContextTextForPdf(record.issuingBody);
+  if (issuingBody) rows.push(["Issuing Body", issuingBody]);
+  return rows;
 }
 
 /** Section heading — bold uppercase.
