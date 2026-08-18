@@ -118,8 +118,11 @@ function renderMixedRTL(
       else groups.push({ isArabic: token.isArabic, tokens: [token] });
     }
 
+    // Lines are authored in logical order, while the cell itself is RTL. Draw
+    // groups from right to left so Arabic remains on the right and any Latin
+    // abbreviation stays immediately to its left in readable visual order.
     let cursorX = x + w;
-    for (const group of groups) {
+    for (const group of [...groups].reverse()) {
       const groupWidth = group.tokens.reduce((sum, token) => sum + token.width, 0);
       const groupStart = cursorX - groupWidth;
       if (group.isArabic) {
@@ -145,17 +148,29 @@ function renderMixedRTL(
 
 type MixedToken = { text: string; isArabic: boolean; width: number };
 
-function mixedTextLines(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): MixedToken[][] {
-  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-  const tokens: MixedToken[] = [];
+/**
+ * Splits text at script boundaries even when the source omits a space, such as
+ * "SDGT/إرهابيون". The PDF renderer can then place each language segment in
+ * the correct visual direction.
+ */
+export function tokenizeMixedTextForPdf(text: string): Array<{ text: string; isArabic: boolean }> {
+  const fragments = text.match(/[\u0600-\u06FF]+|[A-Za-z0-9][A-Za-z0-9./:_-]*|[^\s]/g) ?? [];
   let previousWasArabic = true;
-  for (const word of words) {
-    const containsArabic = isAr(word);
-    const containsLatin = /[a-zA-Z0-9]/.test(word);
-    const isArabicToken: boolean = containsArabic || (!containsLatin && previousWasArabic);
+
+  return fragments.map((fragment) => {
+    const containsArabic = isAr(fragment);
+    const containsLatin = /[a-zA-Z0-9]/.test(fragment);
+    const isArabicToken = containsArabic || (!containsLatin && previousWasArabic);
     previousWasArabic = isArabicToken;
-    doc.font(isArabicToken ? FONT_MIXED : FONT_EN).fontSize(sz);
-    tokens.push({ text: word, isArabic: isArabicToken, width: doc.widthOfString(word) + 5 });
+    return { text: fragment, isArabic: isArabicToken };
+  });
+}
+
+function mixedTextLines(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): MixedToken[][] {
+  const tokens: MixedToken[] = [];
+  for (const token of tokenizeMixedTextForPdf(text)) {
+    doc.font(token.isArabic ? FONT_MIXED : FONT_EN).fontSize(sz);
+    tokens.push({ text: token.text, isArabic: token.isArabic, width: doc.widthOfString(token.text) + 5 });
   }
 
   const lines: MixedToken[][] = [];

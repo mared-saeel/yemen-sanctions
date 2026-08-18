@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildListingContextRows, parseRawNotesForPdf } from "./pdf-report";
+import { buildListingContextRows, parseRawNotesForPdf, tokenizeMixedTextForPdf } from "./pdf-report";
 
 describe("PDF report note parsing", () => {
   it("retains the full free-form bilingual note without dropping Arabic or Latin text", () => {
@@ -32,5 +32,14 @@ describe("PDF report note parsing", () => {
       ["Issuing Body", "OFAC"],
     ]);
     expect(buildListingContextRows({ listingReason: null, legalBasis: "", issuingBody: undefined })).toEqual([]);
+  });
+
+  it("separates a Latin abbreviation from adjacent Arabic text for visual PDF rendering", () => {
+    expect(tokenizeMixedTextForPdf("SDGT/إرهابيون معينون عالميًا")).toEqual([
+      { text: "SDGT/", isArabic: false },
+      { text: "إرهابيون", isArabic: true },
+      { text: "معينون", isArabic: true },
+      { text: "عالميًا", isArabic: true },
+    ]);
   });
 });
