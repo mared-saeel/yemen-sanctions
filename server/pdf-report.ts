@@ -1,6 +1,6 @@
 /**
  * PDF Report Generator — SanctionCheck Match Details Report
- * Design: LSEG World-Check One style (single page, clean, no Confidential)
+ * Design: sanctions screening report style (single page, clean, no Confidential)
  * Fix: doc.page.margins.bottom = 0 before footer prevents extra blank page
  */
 import type { Request, Response } from "express";
@@ -498,7 +498,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       .restore();
     doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
     enText(doc, "Client/Submitted Data", X + c1 + 5, y + 4, c2 - 10);
-    enText(doc, "World-Check Data",      X + c1 + c2 + 5, y + 4, c3 - 10);
+    enText(doc, "Sanctions Record Data", X + c1 + c2 + 5, y + 4, c3 - 10);
     y += 16;
 
     // Name row
@@ -527,7 +527,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       drawBodyValue(doc, record.nameAr!, X + c1 + 5, y + 7 + submittedDrawH, c2 - 10, 8, GRAY_MID);
     }
 
-    // World-Check name (blue)
+    // Listed sanctions record name (blue)
     const worldCheckDrawH = drawBodyValue(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10, 8.5, BLUE);
     if (hasArName && wcName !== record.nameAr) {
       drawBodyValue(doc, record.nameAr!, X + c1 + c2 + 5, y + 7 + worldCheckDrawH, c3 - 10, 8, GRAY_MID);

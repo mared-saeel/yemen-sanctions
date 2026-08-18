@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { extractBatchNames } from "@/lib/batch-file-parser";
+import { readBatchSpreadsheet } from "@/lib/batch-file-reader";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,6 +46,7 @@ function BatchPage() {
   const [names, setNames] = useState<string[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isParsingFile, setIsParsingFile] = useState(false);
   const [results, setResults] = useState<BatchResult[]>([]);
   const [progress, setProgress] = useState(0);
   const [processed, setProcessed] = useState(0);
@@ -96,10 +99,12 @@ function BatchPage() {
     setError(null);
     setResults([]);
     setStats(null);
+    setNames([]);
 
     // Validate file type
     if (!selectedFile.name.match(/\.(xlsx|xls|csv)$/i)) {
       setError("يرجى رفع ملف Excel (.xlsx, .xls) أو CSV");
+      setFile(null);
       return;
     }
 
@@ -110,27 +115,14 @@ function BatchPage() {
     }
 
     setFile(selectedFile);
+    setIsParsingFile(true);
 
     // Parse Excel file
     try {
       const buffer = await selectedFile.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as unknown[][];
+      const data = readBatchSpreadsheet(selectedFile.name, buffer);
 
-      // Extract names from first column
-      const extractedNames: string[] = [];
-      for (let i = 0; i < data.length; i++) {
-        const row = data[i];
-        if (row && row[0]) {
-          const value = String(row[0]).trim();
-          if (value && value.length > 0) {
-            // Skip header row if it contains common header text
-            if (i === 0 && /^(name|اسم|الاسم|Name|NAME|#)$/i.test(value)) continue;
-            extractedNames.push(value);
-          }
-        }
-      }
+      const extractedNames = extractBatchNames(data);
 
       if (extractedNames.length === 0) {
         setError("لم يتم العثور على أسماء في العمود الأول");
@@ -148,6 +140,8 @@ function BatchPage() {
     } catch {
       setError("فشل في قراءة الملف. تأكد من أنه ملف Excel صالح.");
       setFile(null);
+    } finally {
+      setIsParsingFile(false);
     }
   }, []);
 
@@ -285,55 +279,56 @@ function BatchPage() {
           <CardContent className="pt-6">
             {/* Drop Zone */}
             <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors
                 ${file ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/50 hover:bg-muted/50"}`}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-              />
+              <label htmlFor="batch-file-input" className="block cursor-pointer">
+                <input
+                  id="batch-file-input"
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFileSelect(f);
+                  }}
+                />
 
-              {!file ? (
-                <div className="space-y-3">
-                  <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
-                  <div>
-                    <p className="text-lg font-medium">اسحب الملف هنا أو اضغط للاختيار</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      يدعم ملفات Excel (.xlsx, .xls) و CSV — العمود الأول يجب أن يحتوي على الأسماء
-                    </p>
+                {!file ? (
+                  <div className="space-y-3">
+                    <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
+                    <div>
+                      <p className="text-lg font-medium">اسحب الملف هنا أو اضغط للاختيار</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        يدعم ملفات Excel (.xlsx, .xls) و CSV — العمود الأول يجب أن يحتوي على الأسماء
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <FileSpreadsheet className="w-12 h-12 mx-auto text-primary" />
-                  <div>
-                    <p className="text-lg font-medium text-primary">{file.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {names.length} اسم جاهز للفحص • {(file.size / 1024).toFixed(1)} KB
-                    </p>
+                ) : (
+                  <div className="space-y-3">
+                    <FileSpreadsheet className="w-12 h-12 mx-auto text-primary" />
+                    <div>
+                      <p className="text-lg font-medium text-primary">{file.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {isParsingFile ? "جاري قراءة الملف..." : `${names.length} اسم جاهز للفحص`} • {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleReset();
-                    }}
-                  >
-                    <X className="w-4 h-4 ml-1" />
-                    إزالة
-                  </Button>
-                </div>
+                )}
+              </label>
+              {file && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-3 text-destructive"
+                  onClick={handleReset}
+                >
+                  <X className="w-4 h-4 ml-1" />
+                  إزالة
+                </Button>
               )}
             </div>
 
@@ -346,7 +341,7 @@ function BatchPage() {
             )}
 
             {/* Start Button */}
-            {file && names.length > 0 && !error && (
+            {file && names.length > 0 && !error && !isParsingFile && (
               <div className="mt-6 flex justify-center">
                 <Button
                   size="lg"

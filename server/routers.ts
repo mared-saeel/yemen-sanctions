@@ -351,21 +351,27 @@ export const appRouter = router({
           const { createBatchJob, processJobInBackground } = await import("./batch-processor");
           const jobId = createBatchJob(input.names);
 
-          // Start background processing (non-blocking)
-          processJobInBackground(jobId, input.names).then(async () => {
-            // Log the batch operation when done
-            const { getJob } = await import("./batch-processor");
-            const job = getJob(jobId);
-            if (job) {
-              await createAuditLog({
-                userId: ctx.user.id,
-                companyId: ctx.user.companyId ?? undefined,
-                userName: ctx.user.name ?? undefined,
-                action: "search",
-                query: `batch:${input.names.length}:names`,
-                resultsCount: job.matchCount,
+          // Let the response leave the request cycle before CPU-bound screening
+          // begins. This keeps the progress endpoint available to the client.
+          setImmediate(() => {
+            void processJobInBackground(jobId, input.names)
+              .then(async () => {
+                const { getJob } = await import("./batch-processor");
+                const job = getJob(jobId);
+                if (job) {
+                  await createAuditLog({
+                    userId: ctx.user.id,
+                    companyId: ctx.user.companyId ?? undefined,
+                    userName: ctx.user.name ?? undefined,
+                    action: "search",
+                    query: `batch:${input.names.length}:names`,
+                    resultsCount: job.matchCount,
+                  });
+                }
+              })
+              .catch((error) => {
+                console.error("[batch-job] Background processing failed:", error);
               });
-            }
           });
 
           return { jobId, total: input.names.length };

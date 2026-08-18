@@ -66,13 +66,23 @@ function generateJobId(): string {
 // ─── Word Overlap Score (Critical for accuracy) ─────────────────────────────
 
 function batchNormalize(text: string): string {
-  return text
+  const normalized = text
     .replace(/[أإآا]/g, "ا")
     .replace(/[ةه]/g, "ه")
     .replace(/[يى]/g, "ي")
     .replace(/[\u064B-\u065F]/g, "")
     .toLowerCase()
     .replace(/[^\u0600-\u06FFa-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // The same Arabic compound name is commonly written joined or separated.
+  // Canonicalising known compounds keeps the three-word safety gate strict
+  // without rejecting "عبدالله" solely because a source wrote "عبد الله".
+  return normalized
+    .replace(/عبد\s+(الله|الاله|الرحمن|الرحيم|العزيز|الكريم|الملك|الوهاب|الرشيد|القادر|الفتاح)/g, "عبد$1")
+    .replace(/نور\s+الدين/g, "نورالدين")
+    .replace(/صلاح\s+الدين/g, "صلاحالدين")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -222,11 +232,13 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
     }
 
     const results: BatchResult[] = [];
-    const PARALLEL_BATCH_SIZE = 10;
+    // The scoring function is CPU-bound. Processing one item at a time and
+    // yielding after every result lets the status endpoint report real progress.
+    const PROGRESS_BATCH_SIZE = 1;
 
-    // Process names in parallel batches
-    for (let i = 0; i < names.length; i += PARALLEL_BATCH_SIZE) {
-      const batch = names.slice(i, i + PARALLEL_BATCH_SIZE);
+    // Process each name as an independently observable unit of work.
+    for (let i = 0; i < names.length; i += PROGRESS_BATCH_SIZE) {
+      const batch = names.slice(i, i + PROGRESS_BATCH_SIZE);
 
       const batchResults = await Promise.all(
         batch.map(async (name, idx) => {
@@ -320,12 +332,13 @@ export async function processJobInBackground(jobId: string, names: string[]): Pr
       results.push(...batchResults);
 
       // Update progress
-      job.processed = Math.min(i + PARALLEL_BATCH_SIZE, names.length);
+      job.processed = Math.min(i + PROGRESS_BATCH_SIZE, names.length);
       job.progress = Math.round((job.processed / job.total) * 100);
 
-      // Small delay between batches
-      if (i + PARALLEL_BATCH_SIZE < names.length) {
-        await new Promise(resolve => setTimeout(resolve, 30));
+      // Give the event loop a short I/O window before the next CPU-bound name
+      // is scored, allowing the status endpoint to return the new progress.
+      if (i + PROGRESS_BATCH_SIZE < names.length) {
+        await new Promise<void>(resolve => setTimeout(resolve, 25));
       }
     }
 

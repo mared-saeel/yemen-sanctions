@@ -131,13 +131,23 @@ function isArabic(text: string): boolean {
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
 function normalizeArabic(text: string): string {
-  return text
+  const normalized = text
     .replace(/[أإآا]/g, "ا")
     .replace(/[ةه]/g, "ه")
     .replace(/[يى]/g, "ي")
     .replace(/[\u064B-\u065F]/g, "") // remove diacritics
+    .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+
+  // Canonicalise widely used Arabic compound names so a joined user entry and
+  // a spaced source spelling are scored as the same name component.
+  return normalized
+    .replace(/عبد\s+(الله|الاله|الرحمن|الرحيم|العزيز|الكريم|الملك|الوهاب|الرشيد|القادر|الفتاح)/g, "عبد$1")
+    .replace(/نور\s+الدين/g, "نورالدين")
+    .replace(/صلاح\s+الدين/g, "صلاحالدين")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeEnglish(text: string): string {
@@ -842,19 +852,19 @@ function scoreRecord(
   // This prevents false positives like "محمود مقبل" matching "MOHAMMAD SADIQ"
   // EXCEPTION: If query words are all found in the target (subset match), allow it
   // This enables "سويد للصرافة" to match "شركة سويد واولاده للصرافة"
-  if (finalScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
+  const comparisonNameWords = queryIsArabicLang && !queryIsEnglishLang ? nameArWords : nameEnWords;
+  if (finalScore > 0.70 && queryWords.length > 0 && comparisonNameWords.length > 0) {
     const queryFirstWord = normalize(queryWords[0]);
-    const nameFirstWord = normalize(nameEnWords[0]);
+    const nameFirstWord = normalize(comparisonNameWords[0]);
     const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
     
     // If first words don't match well (< 0.70), check if it's a subset match
     if (firstWordSimilarity < 0.70) {
       // Check if all query words exist somewhere in the target (subset match)
       // e.g., "سويد للصرافة" → both words exist in "شركة سويد واولاده للصرافة"
-      const qNormWords = queryWords.map(w => normalize(w)).filter(w => w.length >= 2);
-      const tNormWordsEn = nameEnWords.map(w => normalize(w));
-      const tNormWordsAr = nameArWords.map(w => normalize(w));
-      const allTargetWords = [...tNormWordsEn, ...tNormWordsAr];
+      const qNormWords = normalize(query).split(/\s+/).filter(w => w.length >= 2);
+      const targetName = queryIsArabicLang && !queryIsEnglishLang ? record.nameAr || "" : record.nameEn || "";
+      const allTargetWords = normalize(targetName).split(/\s+/).filter(w => w.length >= 2);
       
       const allQueryWordsFoundInTarget = qNormWords.every(qw =>
         allTargetWords.some(tw => levenshteinSimilarity(qw, tw) >= 0.80)
@@ -874,17 +884,16 @@ function scoreRecord(
   let finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
   
   // STRICT: Apply first word check to comprehensive score too (with subset exception)
-  if (finalComprehensiveScore > 0.70 && queryWords.length > 0 && nameEnWords.length > 0) {
+  if (finalComprehensiveScore > 0.70 && queryWords.length > 0 && comparisonNameWords.length > 0) {
     const queryFirstWord = normalize(queryWords[0]);
-    const nameFirstWord = normalize(nameEnWords[0]);
+    const nameFirstWord = normalize(comparisonNameWords[0]);
     const firstWordSimilarity = levenshteinSimilarity(queryFirstWord, nameFirstWord);
     
     if (firstWordSimilarity < 0.70) {
       // Check subset match before rejecting
-      const qNormWords2 = queryWords.map(w => normalize(w)).filter(w => w.length >= 2);
-      const tNormWordsEn2 = nameEnWords.map(w => normalize(w));
-      const tNormWordsAr2 = nameArWords.map(w => normalize(w));
-      const allTargetWords2 = [...tNormWordsEn2, ...tNormWordsAr2];
+      const qNormWords2 = normalize(query).split(/\s+/).filter(w => w.length >= 2);
+      const targetName2 = queryIsArabicLang && !queryIsEnglishLang ? record.nameAr || "" : record.nameEn || "";
+      const allTargetWords2 = normalize(targetName2).split(/\s+/).filter(w => w.length >= 2);
       const allQueryWordsFoundInTarget2 = qNormWords2.every(qw =>
         allTargetWords2.some(tw => levenshteinSimilarity(qw, tw) >= 0.80)
       );
