@@ -27,9 +27,9 @@ describe("PDF report note parsing", () => {
       legalBasis: "UID: 7843",
       issuingBody: "OFAC",
     })).toEqual([
-      ["Reason for Listing / سبب الإدراج", "عقوبات العراق IRAQ2"],
-      ["Legal Basis / الأساس القانوني", "UID: 7843"],
-      ["Issuing Body / الجهة المُصدرة", "OFAC"],
+      ["Reason for Listing", "عقوبات العراق IRAQ2"],
+      ["Legal Basis", "UID: 7843"],
+      ["Issuing Body", "OFAC"],
     ]);
     expect(buildListingContextRows({ listingReason: null, legalBasis: "", issuingBody: undefined })).toEqual([]);
   });

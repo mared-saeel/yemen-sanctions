@@ -236,10 +236,13 @@ export function buildListingContextRows(record: {
   legalBasis?: string | null;
   issuingBody?: string | null;
 }): [string, string][] {
+  // The compact label column follows the same English-only convention as KEY
+  // DATA. Arabic remains in the section title; duplicating it in the narrow
+  // column caused short labels to wrap and become visually misaligned.
   return [
-    ["Reason for Listing / سبب الإدراج", record.listingReason || ""],
-    ["Legal Basis / الأساس القانوني", record.legalBasis || ""],
-    ["Issuing Body / الجهة المُصدرة", record.issuingBody || ""],
+    ["Reason for Listing", record.listingReason || ""],
+    ["Legal Basis", record.legalBasis || ""],
+    ["Issuing Body", record.issuingBody || ""],
   ].filter(([, value]) => Boolean(value.trim())) as [string, string][];
 }
 
