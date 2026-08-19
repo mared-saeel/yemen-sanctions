@@ -18,3 +18,9 @@
 
 - The preview now serves a valid `robots.txt` with `Allow: /`, an API-route exclusion, and a root sitemap reference.
 - The preview now serves a valid `sitemap.xml` with the canonical URL `https://yemen-sanctions.com/`.
+
+## Google Search Console confirmation
+
+- Ownership of the `yemen-sanctions.com` domain property was verified through a DNS TXT record.
+- Google Search Console accepted `https://yemen-sanctions.com/sitemap.xml` successfully, detected one page, and reported zero sitemap errors.
+- URL Inspection confirmed that `https://yemen-sanctions.com/` is available on Google, indexed, and served over HTTPS.
