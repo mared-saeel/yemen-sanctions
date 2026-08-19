@@ -24,3 +24,8 @@
 - Ownership of the `yemen-sanctions.com` domain property was verified through a DNS TXT record.
 - Google Search Console accepted `https://yemen-sanctions.com/sitemap.xml` successfully, detected one page, and reported zero sitemap errors.
 - URL Inspection confirmed that `https://yemen-sanctions.com/` is available on Google, indexed, and served over HTTPS.
+
+## Commercial name refresh
+
+- The website publishes `منصة يمن سانكشن` as the primary site name and includes `Yemen Sanctions` and `Yemen Sanctions Platform` as alternative names in Organization and WebSite structured data.
+- After deployment, a Google Search Console URL re-indexing request was submitted successfully for the homepage.
