@@ -5,12 +5,15 @@ import { describe, expect, it } from "vitest";
 const projectRoot = resolve(import.meta.dirname, "..");
 
 describe("SEO indexing assets", () => {
-  it("exposes an Arabic-first title, canonical URL, and organization metadata", () => {
+  it("exposes an Arabic-first title, canonical URL, and branded structured data", () => {
     const html = readFileSync(resolve(projectRoot, "client/index.html"), "utf8");
 
     expect(html).toContain("منصة يمن سانكشن | فحص العقوبات والامتثال");
     expect(html).toContain('rel="canonical" href="https://yemen-sanctions.com/"');
     expect(html).toContain('"@type": "Organization"');
+    expect(html).toContain('"@type": "WebSite"');
+    expect(html).toContain('"name": "منصة يمن سانكشن"');
+    expect(html).toContain('"Yemen Sanctions"');
   });
 
   it("allows crawling and advertises the canonical sitemap", () => {
