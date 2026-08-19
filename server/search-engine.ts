@@ -534,7 +534,15 @@ function scoreRecord(
   const nNameEn = normalize(record.nameEn || "");
   const rawNameEn = (record.nameEn || "").toLowerCase().trim();
   const searchNameEn = normalizeSearchText(record.nameEn || ""); // Remove punctuation/symbols
-  const nNameAr = normalize(record.nameAr || "");
+  // Source datasets occasionally place an Arabic name in nameEn and leave nameAr
+  // blank or filled with the literal value "NULL". Route by the actual script,
+  // not by the column name, without modifying any stored record or identifier.
+  const nameArForArabicSearch = isArabic(record.nameAr || "")
+    ? record.nameAr || ""
+    : isArabic(record.nameEn || "")
+      ? record.nameEn || ""
+      : "";
+  const nNameAr = normalize(nameArForArabicSearch);
   const altNames = (record.alternativeNames as string[] | null) || [];
   const nAltNames = altNames.map((n) => normalize(n));
   const rawAltNames = altNames.map((n) => n.toLowerCase().trim());
@@ -547,7 +555,7 @@ function scoreRecord(
   // STRICT CHECK: Extract first word from query and names
   const queryWords = query.trim().split(/\s+/).filter(w => w.length > 0);
   const nameEnWords = (record.nameEn || "").trim().split(/\s+/).filter(w => w.length > 0);
-  const nameArWords = (record.nameAr || "").trim().split(/\s+/).filter(w => w.length > 0);
+  const nameArWords = nameArForArabicSearch.trim().split(/\s+/).filter(w => w.length > 0);
 
   // CRITICAL: If query is Arabic, only search in Arabic names. If English, only in English names.
   // This prevents "محمود" from matching "MOHAMMAD" when they're not the same person
@@ -648,7 +656,7 @@ function scoreRecord(
   
   if (!queryIsEnglishLang || queryIsArabicLang) {
     // Arabic query or mixed: can use Arabic names
-    arTokenScore = tokenSimilarity(query, record.nameAr || "");
+    arTokenScore = tokenSimilarity(query, nameArForArabicSearch);
   }
   const altTokenScore = Math.max(0, ...altNames.map((n) => tokenSimilarity(query, n)));
 
@@ -668,7 +676,7 @@ function scoreRecord(
   
   if (!queryIsEnglishLang || queryIsArabicLang) {
     // Arabic query or mixed: can use Arabic names
-    biAr = bidirectionalTokenScore(query, record.nameAr || "");
+    biAr = bidirectionalTokenScore(query, nameArForArabicSearch);
   }
   const biAlt = Math.max(0, ...altNames.map((n) => bidirectionalTokenScore(query, n)));
 
@@ -697,7 +705,7 @@ function scoreRecord(
     phraseMatchScore(rawQuery, rawNameEn),
     phraseMatchScore(searchQuery, searchNameEn)
   );
-  const phraseAr = phraseMatchScore(query, record.nameAr || "");
+  const phraseAr = phraseMatchScore(query, nameArForArabicSearch);
   const phraseAlt = Math.max(0, ...altNames.map((n) => phraseMatchScore(query, n)));
   const phraseScore = Math.max(phraseEn, phraseAr, phraseAlt);
 
@@ -707,7 +715,7 @@ function scoreRecord(
     lastWordPriorityScore(rawQuery, rawNameEn),
     lastWordPriorityScore(searchQuery, searchNameEn)
   );
-  const lastWordAr = lastWordPriorityScore(query, record.nameAr || "");
+  const lastWordAr = lastWordPriorityScore(query, nameArForArabicSearch);
   const lastWordAlt = Math.max(0, ...altNames.map((n) => lastWordPriorityScore(query, n)));
   const lastWordScore = Math.max(lastWordEn, lastWordAr, lastWordAlt);
 
@@ -717,7 +725,7 @@ function scoreRecord(
     proximityScore(rawQuery, rawNameEn),
     proximityScore(searchQuery, searchNameEn)
   );
-  const proximityAr = proximityScore(query, record.nameAr || "");
+  const proximityAr = proximityScore(query, nameArForArabicSearch);
   const proximityAlt = Math.max(0, ...altNames.map((n) => proximityScore(query, n)));
   const proxScore = Math.max(proximityEn, proximityAr, proximityAlt);
 
@@ -731,7 +739,7 @@ function scoreRecord(
   
   // Only search in Arabic names if query is Arabic
   if (!queryIsEnglishLang) {
-    const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
+    const smartMatchResultAr = smartWordMatch(query, "", nameArForArabicSearch, 0.65);
     if (smartMatchResultAr.matchedWords >= 2) {
       smartMultiWordScore = Math.max(smartMultiWordScore, smartMatchResultAr.matchScore);
     }
@@ -749,7 +757,7 @@ function scoreRecord(
   else {
     // Mixed or fallback: search both
     const smartMatchResultEn = smartWordMatch(query, record.nameEn || "", "", 0.65);
-    const smartMatchResultAr = smartWordMatch(query, "", record.nameAr || "", 0.65);
+    const smartMatchResultAr = smartWordMatch(query, "", nameArForArabicSearch, 0.65);
     const smartMatchResults = [smartMatchResultEn, smartMatchResultAr];
     
     for (const matchResult of smartMatchResults) {
@@ -762,7 +770,7 @@ function scoreRecord(
   // 3h. Legacy Multi-Word Matching
   let multiWordScore = 0;
   const matchResultEn = multiWordMatch(query, record.nameEn || "", null, 0.70);
-  const matchResultAr = multiWordMatch(query, "", record.nameAr || "", 0.70);
+  const matchResultAr = multiWordMatch(query, "", nameArForArabicSearch, 0.70);
   const matchResults = [matchResultEn, matchResultAr];
   
   for (const matchResult of matchResults) {
@@ -803,7 +811,7 @@ function scoreRecord(
   let subsetScore = 0;
   if (queryIsArabicLang && !queryIsEnglishLang) {
     subsetScore = Math.max(
-      subsetMatchScore(query, record.nameAr || ""),
+      subsetMatchScore(query, nameArForArabicSearch),
       Math.max(0, ...altNames.map(n => subsetMatchScore(query, n)))
     );
   } else if (queryIsEnglishLang && !queryIsArabicLang) {
@@ -863,7 +871,7 @@ function scoreRecord(
       // Check if all query words exist somewhere in the target (subset match)
       // e.g., "سويد للصرافة" → both words exist in "شركة سويد واولاده للصرافة"
       const qNormWords = normalize(query).split(/\s+/).filter(w => w.length >= 2);
-      const targetName = queryIsArabicLang && !queryIsEnglishLang ? record.nameAr || "" : record.nameEn || "";
+      const targetName = queryIsArabicLang && !queryIsEnglishLang ? nameArForArabicSearch : record.nameEn || "";
       const allTargetWords = normalize(targetName).split(/\s+/).filter(w => w.length >= 2);
       
       const allQueryWordsFoundInTarget = qNormWords.every(qw =>
@@ -879,7 +887,7 @@ function scoreRecord(
 
   // NEW: Use comprehensive scoring as final fallback
   const comprehensiveScore = comprehensiveNameScore(query, record.nameEn || "");
-  const comprehensiveScoreAr = comprehensiveNameScore(query, record.nameAr || "");
+  const comprehensiveScoreAr = comprehensiveNameScore(query, nameArForArabicSearch);
   const comprehensiveAltScore = Math.max(0, ...altNames.map((n) => comprehensiveNameScore(query, n)));
   let finalComprehensiveScore = Math.max(comprehensiveScore, comprehensiveScoreAr, comprehensiveAltScore);
   
@@ -892,7 +900,7 @@ function scoreRecord(
     if (firstWordSimilarity < 0.70) {
       // Check subset match before rejecting
       const qNormWords2 = normalize(query).split(/\s+/).filter(w => w.length >= 2);
-      const targetName2 = queryIsArabicLang && !queryIsEnglishLang ? record.nameAr || "" : record.nameEn || "";
+      const targetName2 = queryIsArabicLang && !queryIsEnglishLang ? nameArForArabicSearch : record.nameEn || "";
       const allTargetWords2 = normalize(targetName2).split(/\s+/).filter(w => w.length >= 2);
       const allQueryWordsFoundInTarget2 = qNormWords2.every(qw =>
         allTargetWords2.some(tw => levenshteinSimilarity(qw, tw) >= 0.80)
@@ -997,7 +1005,7 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   // Arabic stop words for company names - keep meaningful terms
   const stopWords = new Set([
     'co', 'ltd', 'inc', 'llc', 'plc', 'pte', 'the', 'and', 'for', 'of', 'al', 'el',
-    'و', 'في', 'من', 'إلى', 'على', 'أو',
+    'و', 'في', 'من', 'إلى', 'على', 'أو', 'شركة', 'مؤسسة', 'مجموعة',
   ]);
   const meaningfulTerms = allTerms.filter((t) => t.length >= 2 && !stopWords.has(t));
   const termsToSearch = meaningfulTerms.length > 0 ? meaningfulTerms : allTerms;
@@ -1009,20 +1017,27 @@ export async function searchSanctions(options: SearchOptions): Promise<{
     like(sanctionsRecords.searchIndex, `%${term}%`),
   ]);
 
-  // COMBINED: full-phrase OR any-token (always both, not sequential)
-  const allLikeConditions = [...fullPhraseLike, ...tokenLikeConditions];
-
-  const whereClause =
+  // Retrieve exact/full-phrase candidates independently before broad token candidates.
+  // Otherwise a generic commercial prefix such as "شركة" can fill the capped token
+  // candidate set and hide the exact record despite a valid full-phrase match.
+  const fullPhraseWhere =
     conditions.length > 0
-      ? and(...conditions, or(...allLikeConditions))
-      : or(...allLikeConditions);
+      ? and(...conditions, or(...fullPhraseLike))
+      : or(...fullPhraseLike);
+  const tokenWhere =
+    conditions.length > 0
+      ? and(...conditions, or(...tokenLikeConditions))
+      : or(...tokenLikeConditions);
 
-  // Fetch candidates (max 2000 for scoring)
-  let candidates = await db
-    .select()
-    .from(sanctionsRecords)
-    .where(whereClause)
-    .limit(2000);
+  const [fullPhraseCandidates, tokenCandidates] = await Promise.all([
+    db.select().from(sanctionsRecords).where(fullPhraseWhere).limit(250),
+    db.select().from(sanctionsRecords).where(tokenWhere).limit(2000),
+  ]);
+  const candidateIds = new Set(fullPhraseCandidates.map((record) => record.id));
+  const candidates = [
+    ...fullPhraseCandidates,
+    ...tokenCandidates.filter((record) => !candidateIds.has(record.id)),
+  ];
 
   // Step 2: Score candidates using fuzzy matching
   const scored: SearchResult[] = [];
