@@ -135,7 +135,7 @@ const financialNews = [
     summary: "إعلان رسمي صادر عن البنك المركزي اليمني – المركز الرئيسي عدن ضمن أحدث مستجدات القطاع المصرفي.",
     source: "البنك المركزي اليمني",
     href: "https://cby-ye.com/",
-    image: "/manus-storage/yemen-finance-central-bank_2d8621ef.jpg",
+    image: "/manus-storage/yemen-finance-central-bank_8a03be7a.jpg",
     category: "تنظيم مصرفي",
   },
   {
@@ -143,7 +143,7 @@ const financialNews = [
     summary: "يتضمن الموقع الرسمي للبنك المركزي أخباراً عن مذكرات التفاهم والبرامج المرتبطة بالابتكار والخدمات المالية.",
     source: "البنك المركزي اليمني",
     href: "https://cby-ye.com/",
-    image: "/manus-storage/yemen-finance-payments_4f08eabb.jpg",
+    image: "/manus-storage/yemen-finance-payments_42cc87df.jpg",
     category: "ابتكار مالي",
   },
   {
@@ -151,7 +151,7 @@ const financialNews = [
     summary: "متابعة أخبار البنوك والبرامج والخدمات المنشورة ضمن قسم بنوك يمنية، مع الرجوع دائماً إلى المصدر الأصلي للخبر.",
     source: "جمعية البنوك اليمنية",
     href: "https://yemen-yba.com/category/banksnews",
-    image: "/manus-storage/yemen-finance-banking_9f0eb6a5.jpg",
+    image: "/manus-storage/yemen-finance-banking_ea1d2bb3.jpg",
     category: "قطاع البنوك",
   },
 ];

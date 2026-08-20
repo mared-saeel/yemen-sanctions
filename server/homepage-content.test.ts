@@ -23,5 +23,8 @@ describe("homepage public information", () => {
     expect(homePage).toContain("Editor-reviewed summaries");
     expect(homePage).toContain("المصدر الأصلي");
     expect(homePage).toContain("setActiveNews");
+    expect(homePage).toContain("/manus-storage/yemen-finance-central-bank_8a03be7a.jpg");
+    expect(homePage).toContain("/manus-storage/yemen-finance-payments_42cc87df.jpg");
+    expect(homePage).toContain("/manus-storage/yemen-finance-banking_ea1d2bb3.jpg");
   });
 });
