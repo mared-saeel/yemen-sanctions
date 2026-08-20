@@ -8,6 +8,8 @@ describe("homepage public information", () => {
   it("keeps the public homepage in a fixed light theme with the contact email", () => {
     expect(homePage).toContain('className="min-h-screen bg-white text-slate-900"');
     expect(homePage).toContain("info@yemen-sanctions.com");
+    expect(homePage).toContain('heroTitle: "منصة العقوبات اليمنية"');
+    expect(homePage).not.toContain("منصة يمن سانكشن");
     expect(homePage).not.toContain("setIsDark");
   });
 
