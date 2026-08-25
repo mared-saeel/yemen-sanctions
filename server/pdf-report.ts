@@ -26,13 +26,16 @@ const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AR_FEAT: any[] = ["rtla", "arab", "init", "medi", "fina", "isol"];
 
-const BLUE      = "#1B5EBF";
-const NAVY      = "#1B3A6B";
-const GRAY_ROW  = "#F2F3F5";
-const GRAY_HEAD = "#D8DCE6";
-const BLACK     = "#1A1A1A";
-const GRAY_MID  = "#5A6070";
-const GRAY_LT   = "#9098A8";
+// Quiet compliance palette: one accent, one ink tone and one neutral table tone.
+const GOLD      = "#B7791F";
+const INK       = "#1F2937";
+const BLUE      = GOLD;
+const NAVY      = INK;
+const GRAY_ROW  = "#FAFBFC";
+const GRAY_HEAD = "#F5F6F8";
+const BLACK     = INK;
+const GRAY_MID  = "#667085";
+const GRAY_LT   = "#98A2B3";
 const WHITE     = "#FFFFFF";
 const BORDER    = "#C8CDD8";
 
@@ -327,6 +330,8 @@ function sectionHead(doc: PDFKit.PDFDocument, title: string, x: number, y: numbe
     doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
     enText(doc, title, x, y, w);
   }
+  // A restrained accent rule identifies the section without adding a colored band.
+  doc.save().strokeColor(GOLD).lineWidth(1.1).moveTo(x, y + 14).lineTo(x + 30, y + 14).stroke().restore();
   return y + 16;
 }
 
@@ -402,8 +407,8 @@ function tableRow(
 
 function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, totalW: number, sz: number): number {
   const valW = totalW - labelW;
-  // 24pt keeps bilingual labels on two lines inside their own cell without clipping.
-  return Math.max(24, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
+  // 22pt preserves bilingual labels while avoiding an orphan continuation page for short records.
+  return Math.max(22, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -438,48 +443,56 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const PH = doc.page.height;  // 841.89
     const X  = 45;
     const W  = PW - 90;          // 505.28
-    const CONTENT_BOTTOM = PH - 88;
-    let y = 40;
+    const CONTENT_BOTTOM = PH - 76;
+    let y = 34;
 
     // -- HEADER -----------------------------------------------------------------
-    doc.font(FONT_EN_B).fontSize(16).fillColor(BLUE);
-    enText(doc, "Yemen", X, y, 110);
-    doc.font(FONT_EN_B).fontSize(16).fillColor(NAVY);
-    enText(doc, "Sanctions", X + 55, y, 170);
+    const headerLogoWidth = logoExists ? 52 : 0;
+    const headerTextWidth = W - headerLogoWidth - (logoExists ? 10 : 0);
+    if (logoExists) {
+      doc.image(LOGO_PATH, X + W - headerLogoWidth, y - 2, { width: headerLogoWidth, height: 42 });
+    }
 
-    // Arabic name right side
-    doc.font(FONT_AR_B).fontSize(12).fillColor(BLUE);
-    arText(doc, "منصة العقوبات اليمنية", X, y + 3, W);
-    y += 22;
+    doc.font(FONT_EN_B).fontSize(15).fillColor(INK);
+    enText(doc, "Yemen Sanctions", X, y, 180);
+    doc.font(FONT_AR_B).fontSize(10.5).fillColor(GOLD);
+    arText(doc, "منصة العقوبات اليمنية", X, y + 3, headerTextWidth);
 
-    // Report title
-    doc.font(FONT_EN_B).fontSize(11).fillColor(BLACK);
-    enText(doc, "SANCTIONCHECK MATCH DETAILS REPORT", X, y, W);
+    y += 21;
+    doc.font(FONT_EN_B).fontSize(10.5).fillColor(INK);
+    enText(doc, "SANCTIONS SCREENING REPORT", X, y, 240);
+    doc.font(FONT_AR_B).fontSize(9.5).fillColor(INK);
+    arText(doc, "تقرير فحص العقوبات", X, y + 1, headerTextWidth);
 
-    y += 16;
+    y += 17;
     hr(doc, y, X, X + W, BLACK, 0.8);
     y += 10;
 
     // -- RECORD UID ------------------------------------------------------------
     const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
     doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLACK);
-    enText(doc, "WORLD-CHECK RECORD UID:", X, y, 175);
-    doc.font(FONT_EN_B).fontSize(9.5).fillColor(BLUE);
-    enText(doc, uid, X + 170, y, 200);
+    enText(doc, "RECORD UID", X, y, 95);
+    doc.font(FONT_EN_B).fontSize(9.5).fillColor(GOLD);
+    enText(doc, uid, X + 92, y, 200);
+    doc.font(FONT_AR_B).fontSize(8.5).fillColor(GRAY_MID);
+    arText(doc, "معرّف السجل", X, y + 1, W);
 
     /** Start an explicit continuation page instead of allowing an accidental overflow. */
     const startContinuationPage = (sectionTitle: string) => {
       doc.addPage();
       y = 40;
-      doc.font(FONT_EN_B).fontSize(10).fillColor(BLUE);
-      enText(doc, "Yemen", X, y, 70);
-      doc.font(FONT_EN_B).fontSize(10).fillColor(NAVY);
-      enText(doc, "Sanctions", X + 35, y, 100);
-      doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
-      arText(doc, "منصة العقوبات اليمنية", X, y + 1, W);
+      const continuationLogoWidth = logoExists ? 36 : 0;
+      const continuationTextWidth = W - continuationLogoWidth - (logoExists ? 8 : 0);
+      if (logoExists) {
+        doc.image(LOGO_PATH, X + W - continuationLogoWidth, y - 1, { width: continuationLogoWidth, height: 29 });
+      }
+      doc.font(FONT_EN_B).fontSize(10).fillColor(INK);
+      enText(doc, "Yemen Sanctions", X, y, 120);
+      doc.font(FONT_AR_B).fontSize(8.5).fillColor(GOLD);
+      arText(doc, "منصة العقوبات اليمنية", X, y + 1, continuationTextWidth);
       y += 16;
       doc.font(FONT_EN_B).fontSize(8).fillColor(GRAY_MID);
-      enText(doc, `SANCTIONCHECK MATCH DETAILS REPORT — ${uid}`, X, y, W);
+      enText(doc, `SANCTIONS SCREENING REPORT — ${uid}`, X, y, continuationTextWidth);
       y += 13;
       hr(doc, y, X, X + W, BORDER, 0.4);
       y += 8;
@@ -494,7 +507,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       if (y + requiredHeight > CONTENT_BOTTOM) startContinuationPage(sectionTitle);
     };
 
-    y += 16;
+    y += 12;
     hr(doc, y, X, X + W, BORDER, 0.4);
     y += 8;
 
@@ -504,7 +517,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     const timeStr  = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
     const userName = ctx.user.name || (ctx.user as { username?: string }).username || "—";
 
-    const mH  = 32;
+    const mH  = 30;
     const mCW = W / 2;
     const mLW = 100;
 
@@ -537,7 +550,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.font(FONT_EN).fontSize(metaSz).fillColor(BLACK);
     enText(doc, userName, X + mCW + 90, y + 19, mCW - 94);
 
-    y += mH + 16;
+    y += mH + 12;
 
     // -- CASE AND COMPARISON DATA ----------------------------------------------
     y = sectionHead(doc, "CASE AND COMPARISON DATA / بيانات المقارنة", X, y, W);
@@ -589,7 +602,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     if (hasArName && wcName !== record.nameAr) {
       drawBodyValue(doc, record.nameAr!, X + c1 + c2 + 5, y + 7 + worldCheckDrawH, c3 - 10, 8, GRAY_MID);
     }
-    y += nRH + 14;
+    y += nRH + 10;
 
     // -- KEY DATA --------------------------------------------------------------
     const LW = 130;
@@ -619,7 +632,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       shade = !shade;
     }
 
-    y += 14;
+    y += 10;
 
     // -- LISTING CONTEXT -------------------------------------------------------
     // This section is populated only with factual fields present in the source record.
@@ -633,7 +646,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         y = tableRow(doc, label, value, X, y, LW, W, contextShade, 8.5);
         contextShade = !contextShade;
       }
-      y += 14;
+      y += 10;
     }
 
     // -- ALIASES ---------------------------------------------------------------
@@ -733,7 +746,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         y = tableRow(doc, label, value, X, y, LW, W, shade2, 8.5);
         shade2 = !shade2;
       }
-      y += 14;
+      y += 10;
     }
 
     // -- ALTERNATIVE NAMES (from rawNotes, merged) -----------------------------
@@ -818,8 +831,8 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
 
     // -- FOOTER -- apply the current footer style on every generated page.
     const pageRange = doc.bufferedPageRange();
-    const footerY = PH - 78;
-    const footerContentW = logoExists ? W - 65 : W;
+    const footerY = PH - 64;
+    const footerContentW = W;
     for (let pageIndex = 0; pageIndex < pageRange.count; pageIndex++) {
       doc.switchToPage(pageIndex);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -833,12 +846,6 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       drawBodyValue(doc, "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.", X, footerY + 20, footerContentW, 7.5, GRAY_LT);
       doc.font(FONT_EN).fontSize(7).fillColor(GRAY_LT);
       enText(doc, `Page ${pageIndex + 1} of ${pageRange.count}`, X, footerY + 34, footerContentW, { align: "center" });
-      if (logoExists) {
-        doc.image(LOGO_PATH, X + W - 55, footerY - 3, { width: 52, height: 42 });
-      } else {
-        doc.font(FONT_AR_B).fontSize(9).fillColor(BLUE);
-        arText(doc, "منصة العقوبات اليمنية", X, footerY + 12, W);
-      }
     }
 
     doc.end();
