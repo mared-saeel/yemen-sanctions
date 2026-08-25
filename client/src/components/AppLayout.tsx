@@ -176,7 +176,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   );
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden" dir="ltr">
       {/* Desktop Sidebar */}
       <aside
         className={cn(
