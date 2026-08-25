@@ -18,10 +18,14 @@ describe("quiet compliance PDF design", () => {
     expect(reportSource).toContain('"SANCTIONS SCREENING REPORT"');
   });
 
-  it("uses separate left-to-right and right-to-left panels instead of mixed cells", () => {
-    expect(reportSource).toContain("function drawLanguagePanelV2");
+  it("uses a compact bilingual legal ledger instead of fragmented cards", () => {
+    expect(reportSource).toContain("function drawLedgerSection");
+    expect(reportSource).toContain("type BilingualLedgerRow");
+    expect(reportSource).toContain("const drawSection =");
     expect(reportSource).toContain("function splitValueByScriptForPdf");
-    expect(reportSource).toContain("function drawNameCardV2");
-    expect(reportSource).toContain("const drawPair =");
+  });
+
+  it("renders an unavailable Arabic value with a compatible neutral glyph instead of a missing-font box", () => {
+    expect(reportSource).toContain('row.arValue === "—" ? FONT_EN : FONT_AR');
   });
 });

@@ -994,7 +994,7 @@ function drawNameCardV2(
   return height;
 }
 
-export async function handleGeneratePdfReport(req: Request, res: Response) {
+async function handleGeneratePdfReportCardsDraft(req: Request, res: Response) {
   try {
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
     if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
@@ -1168,6 +1168,404 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
       arText(doc, "للاستخدام في أغراض الامتثال والعناية الواجبة فقط.", X + W / 2, footerY + 8, W / 2 - 4);
       doc.font(FONT_EN).fontSize(6.8).fillColor(GRAY_LT);
       enText(doc, `Page ${pageIndex + 1} of ${pageRange.count}`, X, footerY + 22, W, { align: "center" });
+    }
+    doc.end();
+  } catch (error) {
+    console.error("[PDF Report Error]", error);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF report" });
+  }
+}
+
+type FormalReportField = { label: string; value: string };
+
+function formalFieldHeight(doc: PDFKit.PDFDocument, field: FormalReportField, width: number, rtl: boolean) {
+  const valueHeight = measureSingleLanguageValueForPdf(doc, field.value, width - 24, rtl, 9);
+  return Math.max(47, Math.ceil(valueHeight + 29));
+}
+
+function formalGroupHeight(doc: PDFKit.PDFDocument, fields: FormalReportField[], width: number, rtl: boolean) {
+  return 30 + fields.reduce((sum, field) => sum + formalFieldHeight(doc, field, width, rtl), 0) + 12;
+}
+
+function drawFormalSectionTitle(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  x: number,
+  y: number,
+  width: number,
+  rtl: boolean,
+) {
+  doc.save().rect(rtl ? x + width - 4 : x, y, 4, 18).fill(GOLD).restore();
+  doc.font(rtl ? FONT_AR_B : FONT_EN_B).fontSize(9).fillColor(INK);
+  if (rtl) arText(doc, title, x + 10, y + 4, width - 18);
+  else enText(doc, title, x + 10, y + 4, width - 18);
+  doc.save().strokeColor(BORDER).lineWidth(0.5).moveTo(x, y + 23).lineTo(x + width, y + 23).stroke().restore();
+  return y + 30;
+}
+
+function drawFormalFields(
+  doc: PDFKit.PDFDocument,
+  fields: FormalReportField[],
+  x: number,
+  y: number,
+  width: number,
+  rtl: boolean,
+) {
+  let cursorY = y;
+  fields.forEach((field, index) => {
+    const height = formalFieldHeight(doc, field, width, rtl);
+    if (index % 2 === 0) doc.save().rect(x, cursorY, width, height).fill(GRAY_ROW).restore();
+    doc.save().strokeColor(BORDER).lineWidth(0.35).moveTo(x, cursorY + height).lineTo(x + width, cursorY + height).stroke().restore();
+    doc.font(rtl ? FONT_AR_B : FONT_EN_B).fontSize(7.2).fillColor(GRAY_MID);
+    if (rtl) arText(doc, field.label, x + 12, cursorY + 7, width - 24);
+    else enText(doc, field.label, x + 12, cursorY + 7, width - 24);
+    doc.font(rtl ? FONT_AR : FONT_EN).fontSize(9).fillColor(field.value === "—" ? GRAY_LT : INK);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(field.value || "—", x + 12, cursorY + 20, {
+      width: width - 24,
+      align: rtl ? "right" : "left",
+      features: rtl ? AR_FEAT : undefined,
+      lineGap: 1,
+    });
+    cursorY += height;
+  });
+  return cursorY + 12;
+}
+
+function drawFormalHeader(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  width: number,
+  logoExists: boolean,
+  uid: string,
+  compact = false,
+) {
+  const logoWidth = logoExists ? (compact ? 31 : 48) : 0;
+  const logoHeight = compact ? 27 : 40;
+  const headerHeight = compact ? 44 : 76;
+  if (logoExists) doc.image(LOGO_PATH, x + width - logoWidth, y, { width: logoWidth, height: logoHeight });
+  doc.font(FONT_EN_B).fontSize(compact ? 9.5 : 14).fillColor(INK);
+  enText(doc, "Yemen Sanctions", x, y + 2, 190);
+  doc.font(FONT_AR_B).fontSize(compact ? 8.5 : 10).fillColor(GOLD);
+  arText(doc, "منصة العقوبات اليمنية", x + width - logoWidth - 220, y + 4, 210);
+  doc.font(FONT_EN_B).fontSize(compact ? 7.4 : 9).fillColor(GRAY_MID);
+  enText(doc, compact ? `RECORD UID  ${uid}` : "SANCTIONS SCREENING REPORT", x, y + (compact ? 18 : 27), 250);
+  doc.font(FONT_AR_B).fontSize(compact ? 7.4 : 8.5).fillColor(GRAY_MID);
+  arText(doc, "تقرير فحص العقوبات", x + width - logoWidth - 220, y + (compact ? 18 : 27), 210);
+  doc.save().rect(x, y + headerHeight - 3, width, 3).fill(GOLD).restore();
+  return y + headerHeight + 10;
+}
+
+async function handleGeneratePdfReportFormalDraft(req: Request, res: Response) {
+  try {
+    const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
+    if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
+    const recordId = parseInt(req.params.id);
+    if (Number.isNaN(recordId)) return res.status(400).json({ error: "Invalid record ID" });
+    const record = await getRecordById(recordId);
+    if (!record) return res.status(404).json({ error: "Record not found" });
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: 34, bottom: 48, left: 46, right: 46 },
+      bufferPages: true,
+      info: { Title: `Sanctions Screening Report — ${record.nameEn}`, Author: "Yemen Sanctions Platform" },
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="sanctions-report-${record.referenceNumber || recordId}-${Date.now()}.pdf"`);
+    doc.pipe(res);
+
+    const X = 46;
+    const W = doc.page.width - 92;
+    const PH = doc.page.height;
+    const CONTENT_BOTTOM = PH - 72;
+    const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
+    const logoExists = fs.existsSync(LOGO_PATH);
+    const preparedBy = ctx.user.name || (ctx.user as { username?: string }).username || "—";
+    const printedDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const submitted = String(req.query.submittedName || record.nameEn || "—");
+    const submittedParts = splitValueByScriptForPdf(submitted);
+    const nameParts = splitValueByScriptForPdf(record.nameEn || record.nameAr || "");
+    const arabicName = splitValueByScriptForPdf(record.nameAr || "").arabic;
+    const sourceParts = splitValueByScriptForPdf(record.issuingBody || "");
+    const nationalityParts = splitValueByScriptForPdf(record.nationality || "");
+    const birthPlaceParts = splitValueByScriptForPdf(record.placeOfBirth || "");
+    const reasonParts = splitValueByScriptForPdf(record.listingReason || "");
+    const legalParts = splitValueByScriptForPdf(record.legalBasis || "");
+    const actionParts = splitValueByScriptForPdf(record.actionTaken || "");
+    const notesParts = splitValueByScriptForPdf(record.notes || record.rawNotes || "");
+    const listingRows = buildListingContextRows(record).reduce((map, [label, value]) => ({ ...map, [label]: value }), {} as Record<string, string>);
+    const altParts = ((record.alternativeNames as string[] | null) || []).map((name) => splitValueByScriptForPdf(name));
+    const enAliases = altParts.map((name) => name.english).filter((name) => name !== "—").join("\n") || "—";
+    const arAliases = altParts.map((name) => name.arabic).filter((name) => name !== "—").join("\n") || "—";
+    const entityType = ({ individual: "Individual", organisation: "Organisation", vessel: "Vessel", unspecified: "Unspecified" } as Record<string, string>)[record.entityType || ""] || String(record.entityType || "—");
+    let y = 34;
+
+    const startPage = () => {
+      doc.addPage();
+      y = drawFormalHeader(doc, X, 34, W, logoExists, uid, true);
+    };
+    const ensureGroup = (height: number) => {
+      if (y + height > CONTENT_BOTTOM) startPage();
+    };
+    const drawGroup = (title: string, fields: FormalReportField[], rtl: boolean) => {
+      const height = formalGroupHeight(doc, fields, W, rtl);
+      ensureGroup(height);
+      y = drawFormalSectionTitle(doc, title, X, y, W, rtl);
+      y = drawFormalFields(doc, fields, X, y, W, rtl);
+    };
+
+    y = drawFormalHeader(doc, X, y, W, logoExists, uid);
+    doc.save().rect(X, y, W, 42).fill(GRAY_HEAD).restore();
+    doc.save().strokeColor(BORDER).lineWidth(0.4).rect(X, y, W, 42).stroke().restore();
+    doc.font(FONT_EN_B).fontSize(7.3).fillColor(GRAY_MID);
+    enText(doc, "RECORD UID", X + 12, y + 8, 95);
+    enText(doc, "PREPARED BY", X + W / 2 - 40, y + 8, 100);
+    doc.font(FONT_EN_B).fontSize(9).fillColor(GOLD);
+    enText(doc, uid, X + 12, y + 21, 130);
+    doc.font(FONT_EN).fontSize(8.5).fillColor(INK);
+    enText(doc, preparedBy, X + W / 2 - 40, y + 21, 125);
+    doc.font(FONT_AR_B).fontSize(7.4).fillColor(GRAY_MID);
+    arText(doc, "تاريخ التقرير", X + W - 120, y + 8, 108);
+    doc.font(FONT_EN).fontSize(8.5).fillColor(INK);
+    enText(doc, printedDate, X + W - 116, y + 21, 104, { align: "right" });
+    y += 57;
+
+    drawGroup("SUBMITTED NAME", [{ label: "NAME USED FOR SCREENING", value: submittedParts.english }], false);
+    if (submittedParts.arabic !== "—") drawGroup("الاسم المستخدم في الفحص", [{ label: "الاسم", value: submittedParts.arabic }], true);
+    drawGroup("LISTED RECORD", [{ label: "OFFICIAL LISTED NAME", value: nameParts.english }], false);
+    if (arabicName !== "—") drawGroup("السجل المدرج", [{ label: "الاسم العربي المدرج", value: arabicName }], true);
+
+    drawGroup("RECORD INFORMATION", [
+      { label: "DATASET", value: sourceParts.english },
+      { label: "ENTITY TYPE", value: entityType },
+      { label: "LISTING DATE", value: String(record.listingDate || "—") },
+      { label: "SOURCE REFERENCE", value: uid },
+      { label: "ISSUING BODY", value: sourceParts.english },
+    ], false);
+
+    const arabicProfile: FormalReportField[] = [
+      { label: "الاسم", value: arabicName },
+      { label: "الجنسية", value: nationalityParts.arabic },
+      { label: "مكان الميلاد", value: birthPlaceParts.arabic },
+    ].filter((field) => field.value !== "—");
+    if (arabicProfile.length) drawGroup("البيانات التعريفية", arabicProfile, true);
+
+    drawGroup("LISTING CONTEXT", [
+      { label: "LISTING PROGRAMME", value: splitValueByScriptForPdf(listingRows["Listing Programme"] || "").english },
+      { label: "REASON FOR LISTING", value: reasonParts.english },
+      { label: "LEGAL BASIS", value: legalParts.english },
+      { label: "ACTION REQUIRED", value: actionParts.english },
+      { label: "NOTES", value: notesParts.english },
+    ], false);
+
+    const arabicContext: FormalReportField[] = [
+      { label: "سبب الإدراج", value: reasonParts.arabic },
+      { label: "الأساس القانوني", value: legalParts.arabic },
+      { label: "الإجراء المطلوب", value: actionParts.arabic },
+      { label: "ملاحظات", value: notesParts.arabic },
+    ].filter((field) => field.value !== "—");
+    if (arabicContext.length) drawGroup("سياق الإدراج", arabicContext, true);
+
+    if (enAliases !== "—") drawGroup("ALTERNATIVE NAMES", [{ label: "LATIN ALIASES", value: enAliases }], false);
+    if (arAliases !== "—") drawGroup("الأسماء البديلة", [{ label: "الأسماء العربية", value: arAliases }], true);
+
+    const footerY = PH - 56;
+    const pages = doc.bufferedPageRange();
+    for (let pageIndex = 0; pageIndex < pages.count; pageIndex++) {
+      doc.switchToPage(pageIndex);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc.page as any).margins.bottom = 0;
+      hr(doc, footerY, X, X + W, BORDER, 0.4);
+      doc.font(FONT_EN).fontSize(6.7).fillColor(GRAY_LT);
+      enText(doc, "For compliance and due-diligence purposes only.", X, footerY + 8, W / 2 - 5);
+      doc.font(FONT_AR).fontSize(6.7).fillColor(GRAY_LT);
+      arText(doc, "للاستخدام في أغراض الامتثال والعناية الواجبة فقط.", X + W / 2, footerY + 8, W / 2 - 5);
+      doc.font(FONT_EN).fontSize(6.7).fillColor(GRAY_LT);
+      enText(doc, `Page ${pageIndex + 1} of ${pages.count}`, X, footerY + 22, W, { align: "center" });
+    }
+    doc.end();
+  } catch (error) {
+    console.error("[PDF Report Error]", error);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF report" });
+  }
+}
+
+type BilingualLedgerRow = {
+  enLabel: string;
+  enValue: string;
+  arLabel: string;
+  arValue: string;
+};
+
+function ledgerRowHeight(doc: PDFKit.PDFDocument, row: BilingualLedgerRow, halfWidth: number) {
+  const enHeight = measureSingleLanguageValueForPdf(doc, row.enValue, halfWidth - 26, false, 8.8);
+  const arHeight = measureSingleLanguageValueForPdf(doc, row.arValue, halfWidth - 26, true, 8.8);
+  return Math.max(42, Math.ceil(Math.max(enHeight, arHeight) + 25));
+}
+
+function ledgerSectionHeight(doc: PDFKit.PDFDocument, rows: BilingualLedgerRow[], halfWidth: number) {
+  return 31 + rows.reduce((sum, row) => sum + ledgerRowHeight(doc, row, halfWidth), 0) + 12;
+}
+
+function drawLedgerSection(
+  doc: PDFKit.PDFDocument,
+  enTitle: string,
+  arTitle: string,
+  rows: BilingualLedgerRow[],
+  x: number,
+  y: number,
+  width: number,
+) {
+  const halfWidth = width / 2;
+  doc.save().rect(x, y, width, 24).fill(GRAY_HEAD).restore();
+  doc.save().rect(x, y, 4, 24).fill(GOLD).restore();
+  doc.font(FONT_EN_B).fontSize(8.8).fillColor(INK);
+  enText(doc, enTitle, x + 12, y + 8, halfWidth - 18);
+  doc.font(FONT_AR_B).fontSize(8.8).fillColor(INK);
+  arText(doc, arTitle, x + halfWidth + 10, y + 8, halfWidth - 16);
+  let cursorY = y + 31;
+
+  rows.forEach((row, index) => {
+    const height = ledgerRowHeight(doc, row, halfWidth);
+    if (index % 2 === 0) doc.save().rect(x, cursorY, width, height).fill(GRAY_ROW).restore();
+    doc.save().strokeColor(BORDER).lineWidth(0.35)
+      .moveTo(x + halfWidth, cursorY).lineTo(x + halfWidth, cursorY + height)
+      .moveTo(x, cursorY + height).lineTo(x + width, cursorY + height)
+      .stroke().restore();
+
+    doc.font(FONT_EN_B).fontSize(6.9).fillColor(GRAY_MID);
+    enText(doc, row.enLabel, x + 12, cursorY + 7, halfWidth - 24);
+    doc.font(FONT_EN).fontSize(8.8).fillColor(row.enValue === "—" ? GRAY_LT : INK);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(row.enValue || "—", x + 12, cursorY + 19, { width: halfWidth - 24, align: "left", lineGap: 1 });
+
+    doc.font(FONT_AR_B).fontSize(6.9).fillColor(GRAY_MID);
+    arText(doc, row.arLabel, x + halfWidth + 12, cursorY + 7, halfWidth - 24);
+    doc.font(row.arValue === "—" ? FONT_EN : FONT_AR).fontSize(8.8).fillColor(row.arValue === "—" ? GRAY_LT : INK);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(row.arValue || "—", x + halfWidth + 12, cursorY + 19, {
+      width: halfWidth - 24,
+      align: "right",
+      features: row.arValue === "—" ? undefined : AR_FEAT,
+      lineGap: 1,
+    });
+    cursorY += height;
+  });
+  return cursorY + 12;
+}
+
+export async function handleGeneratePdfReport(req: Request, res: Response) {
+  try {
+    const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
+    if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
+    const recordId = parseInt(req.params.id);
+    if (Number.isNaN(recordId)) return res.status(400).json({ error: "Invalid record ID" });
+    const record = await getRecordById(recordId);
+    if (!record) return res.status(404).json({ error: "Record not found" });
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: 34, bottom: 48, left: 46, right: 46 },
+      bufferPages: true,
+      info: { Title: `Sanctions Screening Report — ${record.nameEn}`, Author: "Yemen Sanctions Platform" },
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="sanctions-report-${record.referenceNumber || recordId}-${Date.now()}.pdf"`);
+    doc.pipe(res);
+
+    const X = 46;
+    const W = doc.page.width - 92;
+    const HALF = W / 2;
+    const PH = doc.page.height;
+    const CONTENT_BOTTOM = PH - 72;
+    const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
+    const logoExists = fs.existsSync(LOGO_PATH);
+    const preparedBy = ctx.user.name || (ctx.user as { username?: string }).username || "—";
+    const printedDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const submitted = splitValueByScriptForPdf(String(req.query.submittedName || record.nameEn || "—"));
+    const recordName = splitValueByScriptForPdf(record.nameEn || record.nameAr || "");
+    const recordArabicName = splitValueByScriptForPdf(record.nameAr || "").arabic;
+    const source = splitValueByScriptForPdf(record.issuingBody || "");
+    const nationality = splitValueByScriptForPdf(record.nationality || "");
+    const birthPlace = splitValueByScriptForPdf(record.placeOfBirth || "");
+    const listingReason = splitValueByScriptForPdf(record.listingReason || "");
+    const legalBasis = splitValueByScriptForPdf(record.legalBasis || "");
+    const actionTaken = splitValueByScriptForPdf(record.actionTaken || "");
+    const notes = splitValueByScriptForPdf(record.notes || record.rawNotes || "");
+    const listing = buildListingContextRows(record).reduce((map, [label, value]) => ({ ...map, [label]: value }), {} as Record<string, string>);
+    const aliases = ((record.alternativeNames as string[] | null) || []).map((name) => splitValueByScriptForPdf(name));
+    const enAliases = aliases.map((name) => name.english).filter((name) => name !== "—").join("\n") || "—";
+    const arAliases = aliases.map((name) => name.arabic).filter((name) => name !== "—").join("\n") || "—";
+    const entityType = ({ individual: "Individual", organisation: "Organisation", vessel: "Vessel", unspecified: "Unspecified" } as Record<string, string>)[record.entityType || ""] || String(record.entityType || "—");
+    let y = 34;
+
+    const startContinuation = () => {
+      doc.addPage();
+      y = drawFormalHeader(doc, X, 34, W, logoExists, uid, true);
+    };
+    const drawSection = (enTitle: string, arTitle: string, rows: BilingualLedgerRow[]) => {
+      const required = ledgerSectionHeight(doc, rows, HALF);
+      if (y + required > CONTENT_BOTTOM) startContinuation();
+      y = drawLedgerSection(doc, enTitle, arTitle, rows, X, y, W);
+    };
+
+    y = drawFormalHeader(doc, X, y, W, logoExists, uid);
+    doc.save().rect(X, y, W, 41).fill(GRAY_HEAD).strokeColor(BORDER).lineWidth(0.4).stroke().restore();
+    doc.font(FONT_EN_B).fontSize(7.1).fillColor(GRAY_MID);
+    enText(doc, "RECORD UID", X + 12, y + 8, 95);
+    enText(doc, "PREPARED BY", X + HALF - 35, y + 8, 98);
+    doc.font(FONT_EN_B).fontSize(8.9).fillColor(GOLD);
+    enText(doc, uid, X + 12, y + 21, 110);
+    doc.font(FONT_EN).fontSize(8.3).fillColor(INK);
+    enText(doc, preparedBy, X + HALF - 35, y + 21, 120);
+    doc.font(FONT_AR_B).fontSize(7.2).fillColor(GRAY_MID);
+    arText(doc, "تاريخ التقرير", X + W - 124, y + 8, 112);
+    doc.font(FONT_EN).fontSize(8.3).fillColor(INK);
+    enText(doc, printedDate, X + W - 120, y + 21, 108, { align: "right" });
+    y += 57;
+
+    drawSection("MATCH OVERVIEW", "ملخص المطابقة", [
+      { enLabel: "SUBMITTED NAME", enValue: submitted.english, arLabel: "الاسم محل الفحص", arValue: submitted.arabic },
+      { enLabel: "LISTED RECORD NAME", enValue: recordName.english, arLabel: "الاسم المدرج", arValue: recordArabicName },
+    ]);
+
+    drawSection("RECORD INFORMATION", "بيانات السجل", [
+      { enLabel: "DATASET", enValue: source.english, arLabel: "الاسم العربي", arValue: recordArabicName },
+      { enLabel: "ENTITY TYPE", enValue: entityType, arLabel: "الجنسية", arValue: nationality.arabic },
+      { enLabel: "LISTING DATE", enValue: String(record.listingDate || "—"), arLabel: "مكان الميلاد", arValue: birthPlace.arabic },
+      { enLabel: "SOURCE REFERENCE", enValue: uid, arLabel: "تاريخ الميلاد", arValue: splitValueByScriptForPdf(record.dateOfBirth || "").arabic },
+      { enLabel: "ISSUING BODY", enValue: source.english, arLabel: "الجهة المصدرة", arValue: source.arabic },
+    ]);
+
+    drawSection("LISTING CONTEXT", "سياق الإدراج", [
+      { enLabel: "LISTING PROGRAMME", enValue: splitValueByScriptForPdf(listing["Listing Programme"] || "").english, arLabel: "سبب الإدراج", arValue: listingReason.arabic },
+      { enLabel: "REASON FOR LISTING", enValue: listingReason.english, arLabel: "الأساس القانوني", arValue: legalBasis.arabic },
+      { enLabel: "LEGAL BASIS", enValue: legalBasis.english, arLabel: "الإجراء المطلوب", arValue: actionTaken.arabic },
+      { enLabel: "ACTION REQUIRED", enValue: actionTaken.english, arLabel: "ملاحظات", arValue: notes.arabic },
+      { enLabel: "NOTES", enValue: notes.english, arLabel: "المرجع المصدر", arValue: splitValueByScriptForPdf(listing["Source Reference"] || uid).arabic },
+    ]);
+
+    if (enAliases !== "—" || arAliases !== "—") {
+      drawSection("ALTERNATIVE NAMES", "الأسماء البديلة", [
+        { enLabel: "LATIN ALIASES", enValue: enAliases, arLabel: "الأسماء العربية", arValue: arAliases },
+      ]);
+    }
+
+    const footerY = PH - 56;
+    const pages = doc.bufferedPageRange();
+    for (let pageIndex = 0; pageIndex < pages.count; pageIndex++) {
+      doc.switchToPage(pageIndex);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc.page as any).margins.bottom = 0;
+      hr(doc, footerY, X, X + W, BORDER, 0.4);
+      doc.font(FONT_EN).fontSize(6.7).fillColor(GRAY_LT);
+      enText(doc, "For compliance and due-diligence purposes only.", X, footerY + 8, HALF - 5);
+      doc.font(FONT_AR).fontSize(6.7).fillColor(GRAY_LT);
+      arText(doc, "للاستخدام في أغراض الامتثال والعناية الواجبة فقط.", X + HALF, footerY + 8, HALF - 5);
+      doc.font(FONT_EN).fontSize(6.7).fillColor(GRAY_LT);
+      enText(doc, `Page ${pageIndex + 1} of ${pages.count}`, X, footerY + 22, W, { align: "center" });
     }
     doc.end();
   } catch (error) {
