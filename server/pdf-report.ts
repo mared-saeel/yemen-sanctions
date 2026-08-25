@@ -1402,7 +1402,7 @@ type BilingualLedgerRow = {
 function ledgerRowHeight(doc: PDFKit.PDFDocument, row: BilingualLedgerRow, halfWidth: number) {
   const enHeight = measureSingleLanguageValueForPdf(doc, row.enValue, halfWidth - 26, false, 8.8);
   const arHeight = measureSingleLanguageValueForPdf(doc, row.arValue, halfWidth - 26, true, 8.8);
-  return Math.max(42, Math.ceil(Math.max(enHeight, arHeight) + 25));
+  return Math.max(66, Math.ceil(enHeight + arHeight + 37));
 }
 
 function ledgerSectionHeight(doc: PDFKit.PDFDocument, rows: BilingualLedgerRow[], halfWidth: number) {
@@ -1418,20 +1418,21 @@ function drawLedgerSection(
   y: number,
   width: number,
 ) {
-  const halfWidth = width / 2;
-  doc.save().rect(x, y, width, 24).fill(GRAY_HEAD).restore();
-  doc.save().rect(x, y, 4, 24).fill(GOLD).restore();
+  const halfWidth = width;
+  doc.save().rect(x, y, width, 33).fill(GRAY_HEAD).restore();
+  doc.save().rect(x, y, 4, 33).fill(GOLD).restore();
   doc.font(FONT_EN_B).fontSize(8.8).fillColor(INK);
-  enText(doc, enTitle, x + 12, y + 8, halfWidth - 18);
+  enText(doc, enTitle, x + 12, y + 7, halfWidth - 24);
   doc.font(FONT_AR_B).fontSize(8.8).fillColor(INK);
-  arText(doc, arTitle, x + halfWidth + 10, y + 8, halfWidth - 16);
-  let cursorY = y + 31;
+  // Arabic remains in the same left-side content path as English, not a mirrored column.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text(arTitle, x + 12, y + 18, { align: "left", features: AR_FEAT, width: halfWidth - 24, lineBreak: false });
+  let cursorY = y + 40;
 
   rows.forEach((row, index) => {
     const height = ledgerRowHeight(doc, row, halfWidth);
     if (index % 2 === 0) doc.save().rect(x, cursorY, width, height).fill(GRAY_ROW).restore();
     doc.save().strokeColor(BORDER).lineWidth(0.35)
-      .moveTo(x + halfWidth, cursorY).lineTo(x + halfWidth, cursorY + height)
       .moveTo(x, cursorY + height).lineTo(x + width, cursorY + height)
       .stroke().restore();
 
@@ -1441,13 +1442,15 @@ function drawLedgerSection(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (doc as any).text(row.enValue || "—", x + 12, cursorY + 19, { width: halfWidth - 24, align: "left", lineGap: 1 });
 
+    const enHeight = measureSingleLanguageValueForPdf(doc, row.enValue, halfWidth - 24, false, 8.8);
     doc.font(FONT_AR_B).fontSize(6.9).fillColor(GRAY_MID);
-    arText(doc, row.arLabel, x + halfWidth + 12, cursorY + 7, halfWidth - 24);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(row.arLabel, x + 12, cursorY + 23 + enHeight, { align: "left", features: AR_FEAT, width: halfWidth - 24, lineBreak: false });
     doc.font(row.arValue === "—" ? FONT_EN : FONT_AR).fontSize(8.8).fillColor(row.arValue === "—" ? GRAY_LT : INK);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (doc as any).text(row.arValue || "—", x + halfWidth + 12, cursorY + 19, {
+    (doc as any).text(row.arValue || "—", x + 12, cursorY + 35 + enHeight, {
       width: halfWidth - 24,
-      align: "right",
+      align: "left",
       features: row.arValue === "—" ? undefined : AR_FEAT,
       lineGap: 1,
     });

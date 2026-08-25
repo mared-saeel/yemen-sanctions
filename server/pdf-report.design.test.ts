@@ -25,6 +25,11 @@ describe("quiet compliance PDF design", () => {
     expect(reportSource).toContain("function splitValueByScriptForPdf");
   });
 
+  it("places Arabic below English in the same left-side ledger path", () => {
+    expect(reportSource).toContain("Arabic remains in the same left-side content path as English");
+    expect(reportSource).toContain('align: "left", features: AR_FEAT');
+  });
+
   it("renders an unavailable Arabic value with a compatible neutral glyph instead of a missing-font box", () => {
     expect(reportSource).toContain('row.arValue === "—" ? FONT_EN : FONT_AR');
   });
