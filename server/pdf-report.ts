@@ -411,7 +411,7 @@ function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, 
   return Math.max(22, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
-export async function handleGeneratePdfReport(req: Request, res: Response) {
+async function handleGeneratePdfReportLegacy(req: Request, res: Response) {
   try {
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
     if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
@@ -851,6 +851,327 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     doc.end();
   } catch (err) {
     console.error("[PDF Report Error]", err);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF report" });
+  }
+}
+
+type SingleLanguagePanelRow = { label: string; value: string };
+
+export function splitValueByScriptForPdf(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "—") return { english: "—", arabic: "—" };
+
+  const tokens = tokenizeMixedTextForPdf(raw);
+  const join = (parts: string[]) => parts.join(" ")
+    .replace(/\s+([,.;:،])/g, "$1")
+    .replace(/([(/])\s+/g, "$1")
+    .replace(/\s+([/)])/g, "$1")
+    .trim();
+
+  const arabic = join(tokens.filter((token) => token.isArabic).map((token) => token.text));
+  const english = join(tokens.filter((token) => !token.isArabic).map((token) => token.text));
+  return { english: english || "—", arabic: arabic || "—" };
+}
+
+function measureSingleLanguageValueForPdf(
+  doc: PDFKit.PDFDocument,
+  value: string,
+  width: number,
+  isRtl: boolean,
+  size = 8.5,
+) {
+  doc.font(isRtl ? FONT_AR : FONT_EN).fontSize(size);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return Math.max(size + 3, (doc as any).heightOfString(value || "—", {
+    width,
+    align: isRtl ? "right" : "left",
+    features: isRtl ? AR_FEAT : undefined,
+    lineGap: 1,
+  }));
+}
+
+function panelRowHeightV2(
+  doc: PDFKit.PDFDocument,
+  row: SingleLanguagePanelRow,
+  width: number,
+  isRtl: boolean,
+) {
+  return Math.max(38, Math.ceil(measureSingleLanguageValueForPdf(doc, row.value, width - 18, isRtl) + 25));
+}
+
+function panelHeightV2(
+  doc: PDFKit.PDFDocument,
+  rows: SingleLanguagePanelRow[],
+  width: number,
+  isRtl: boolean,
+) {
+  return 32 + rows.reduce((total, row) => total + panelRowHeightV2(doc, row, width, isRtl), 0);
+}
+
+function drawSectionBandV2(
+  doc: PDFKit.PDFDocument,
+  enTitle: string,
+  arTitle: string,
+  x: number,
+  y: number,
+  width: number,
+) {
+  const height = 25;
+  doc.save().rect(x, y, width, height).fill(GRAY_HEAD).restore();
+  doc.save().rect(x, y, 4, height).fill(GOLD).restore();
+  doc.font(FONT_EN_B).fontSize(9).fillColor(INK);
+  enText(doc, enTitle, x + 11, y + 8, width / 2 - 16);
+  doc.font(FONT_AR_B).fontSize(9).fillColor(INK);
+  arText(doc, arTitle, x + width / 2, y + 8, width / 2 - 11);
+  return y + height + 8;
+}
+
+function drawLanguagePanelV2(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  rows: SingleLanguagePanelRow[],
+  x: number,
+  y: number,
+  width: number,
+  isRtl: boolean,
+) {
+  const height = panelHeightV2(doc, rows, width, isRtl);
+  doc.save().rect(x, y, width, height).fill(WHITE).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+  doc.save().rect(x, y, width, 32).fill(GRAY_HEAD).restore();
+  doc.save().rect(isRtl ? x + width - 4 : x, y, 4, 32).fill(GOLD).restore();
+  doc.font(isRtl ? FONT_AR_B : FONT_EN_B).fontSize(8.5).fillColor(INK);
+  if (isRtl) arText(doc, title, x + 10, y + 10, width - 20);
+  else enText(doc, title, x + 10, y + 10, width - 20);
+
+  let rowY = y + 32;
+  rows.forEach((row, index) => {
+    const rowHeight = panelRowHeightV2(doc, row, width, isRtl);
+    if (index % 2 === 0) doc.save().rect(x, rowY, width, rowHeight).fill(GRAY_ROW).restore();
+    doc.save().strokeColor(BORDER).lineWidth(0.25).moveTo(x, rowY + rowHeight).lineTo(x + width, rowY + rowHeight).stroke().restore();
+
+    doc.font(isRtl ? FONT_AR_B : FONT_EN_B).fontSize(7.2).fillColor(GRAY_MID);
+    if (isRtl) arText(doc, row.label, x + 9, rowY + 7, width - 18);
+    else enText(doc, row.label, x + 9, rowY + 7, width - 18);
+
+    doc.font(isRtl ? FONT_AR : FONT_EN).fontSize(8.5).fillColor(row.value === "—" ? GRAY_LT : INK);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).text(row.value || "—", x + 9, rowY + 18, {
+      width: width - 18,
+      align: isRtl ? "right" : "left",
+      features: isRtl ? AR_FEAT : undefined,
+      lineGap: 1,
+    });
+    rowY += rowHeight;
+  });
+  return height;
+}
+
+function drawNameCardV2(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  isRtl: boolean,
+  accent = INK,
+) {
+  const valueHeight = measureSingleLanguageValueForPdf(doc, value, width - 22, isRtl, 9.2);
+  const height = Math.max(56, Math.ceil(valueHeight + 35));
+  doc.save().rect(x, y, width, height).fill(WHITE).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+  doc.save().rect(isRtl ? x + width - 4 : x, y, 4, height).fill(accent).restore();
+  doc.font(isRtl ? FONT_AR_B : FONT_EN_B).fontSize(7.5).fillColor(accent);
+  if (isRtl) arText(doc, label, x + 11, y + 9, width - 22);
+  else enText(doc, label, x + 11, y + 9, width - 22);
+  doc.font(isRtl ? FONT_AR : FONT_EN).fontSize(9.2).fillColor(value === "—" ? GRAY_LT : INK);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text(value || "—", x + 11, y + 24, {
+    width: width - 22,
+    align: isRtl ? "right" : "left",
+    features: isRtl ? AR_FEAT : undefined,
+    lineGap: 1,
+  });
+  return height;
+}
+
+export async function handleGeneratePdfReport(req: Request, res: Response) {
+  try {
+    const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
+    if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const recordId = parseInt(req.params.id);
+    if (Number.isNaN(recordId)) return res.status(400).json({ error: "Invalid record ID" });
+    const record = await getRecordById(recordId);
+    if (!record) return res.status(404).json({ error: "Record not found" });
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: 34, bottom: 46, left: 40, right: 40 },
+      bufferPages: true,
+      info: { Title: `Sanctions Screening Report — ${record.nameEn}`, Author: "Yemen Sanctions Platform" },
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="sanctions-report-${record.referenceNumber || recordId}-${Date.now()}.pdf"`);
+    doc.pipe(res);
+
+    const X = 40;
+    const W = doc.page.width - 80;
+    const PH = doc.page.height;
+    const CONTENT_BOTTOM = PH - 72;
+    const logoExists = fs.existsSync(LOGO_PATH);
+    const uid = record.referenceNumber || `SC-${String(record.id).padStart(7, "0")}`;
+    const userName = ctx.user.name || (ctx.user as { username?: string }).username || "—";
+    const now = new Date();
+    const printedDate = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const submitted = String(req.query.submittedName || record.nameEn || "—");
+    const submittedParts = splitValueByScriptForPdf(submitted);
+    const nameEnParts = splitValueByScriptForPdf(record.nameEn || "");
+    const nameArParts = splitValueByScriptForPdf(record.nameAr || "");
+    const reasonParts = splitValueByScriptForPdf(record.listingReason || "");
+    const legalParts = splitValueByScriptForPdf(record.legalBasis || "");
+    const actionParts = splitValueByScriptForPdf(record.actionTaken || "");
+    const notesParts = splitValueByScriptForPdf(record.notes || record.rawNotes || "");
+    const coreNameParts = splitValueByScriptForPdf(record.nameEn || record.nameAr || "");
+    const nationalityParts = splitValueByScriptForPdf(record.nationality || "");
+    const birthPlaceParts = splitValueByScriptForPdf(record.placeOfBirth || "");
+    const altNames = ((record.alternativeNames as string[] | null) || []).map((name) => splitValueByScriptForPdf(name));
+    const enAliases = altNames.map((name) => name.english).filter((name) => name !== "—").join("\n") || "—";
+    const arAliases = altNames.map((name) => name.arabic).filter((name) => name !== "—").join("\n") || "—";
+    const gap = 14;
+    const columnW = (W - gap) / 2;
+    let y = 34;
+
+    const drawHeader = (isContinuation = false) => {
+      const logoWidth = logoExists ? (isContinuation ? 33 : 48) : 0;
+      const headerHeight = isContinuation ? 39 : 62;
+      if (logoExists) doc.image(LOGO_PATH, X + W - logoWidth, y, { width: logoWidth, height: isContinuation ? 28 : 40 });
+      doc.font(FONT_EN_B).fontSize(isContinuation ? 10 : 15).fillColor(INK);
+      enText(doc, "Yemen Sanctions", X, y + 2, 190);
+      doc.font(FONT_AR_B).fontSize(isContinuation ? 8.5 : 10.5).fillColor(GOLD);
+      arText(doc, "منصة العقوبات اليمنية", X + W - logoWidth - 210, y + 4, 200);
+      doc.font(FONT_EN_B).fontSize(isContinuation ? 7.5 : 9).fillColor(INK);
+      enText(doc, isContinuation ? `RECORD UID  ${uid}` : "SANCTIONS SCREENING REPORT", X, y + (isContinuation ? 18 : 25), 240);
+      doc.font(FONT_AR_B).fontSize(isContinuation ? 7.5 : 8.5).fillColor(GRAY_MID);
+      arText(doc, isContinuation ? "تقرير فحص العقوبات" : "تقرير فحص العقوبات", X + W - logoWidth - 210, y + (isContinuation ? 18 : 26), 200);
+      doc.save().rect(X, y + headerHeight - 3, W, 3).fill(GOLD).restore();
+      y += headerHeight + 10;
+    };
+
+    const startContinuation = () => {
+      doc.addPage();
+      y = 34;
+      drawHeader(true);
+    };
+
+    const ensure = (height: number) => {
+      if (y + height > CONTENT_BOTTOM) startContinuation();
+    };
+
+    const drawPair = (
+      sectionEn: string,
+      sectionAr: string,
+      leftTitle: string,
+      leftRows: SingleLanguagePanelRow[],
+      rightTitle: string,
+      rightRows: SingleLanguagePanelRow[],
+    ) => {
+      const leftHeight = panelHeightV2(doc, leftRows, columnW, false);
+      const rightHeight = panelHeightV2(doc, rightRows, columnW, true);
+      const needed = 33 + Math.max(leftHeight, rightHeight) + 12;
+      ensure(needed);
+      y = drawSectionBandV2(doc, sectionEn, sectionAr, X, y, W);
+      const panelY = y;
+      drawLanguagePanelV2(doc, leftTitle, leftRows, X, panelY, columnW, false);
+      drawLanguagePanelV2(doc, rightTitle, rightRows, X + columnW + gap, panelY, columnW, true);
+      y += Math.max(leftHeight, rightHeight) + 13;
+    };
+
+    drawHeader();
+    const metaH = 33;
+    doc.save().rect(X, y, W, metaH).fill(GRAY_HEAD).strokeColor(BORDER).lineWidth(0.4).stroke().restore();
+    doc.font(FONT_EN_B).fontSize(7.3).fillColor(GRAY_MID);
+    enText(doc, "RECORD UID", X + 10, y + 7, 80);
+    enText(doc, "PREPARED BY", X + W / 2 + 4, y + 7, 90);
+    doc.font(FONT_EN_B).fontSize(8.5).fillColor(GOLD);
+    enText(doc, uid, X + 10, y + 18, W / 2 - 20);
+    doc.font(FONT_EN).fontSize(8.5).fillColor(INK);
+    enText(doc, userName, X + W / 2 + 4, y + 18, W / 2 - 14);
+    doc.font(FONT_AR_B).fontSize(7.5).fillColor(GRAY_MID);
+    arText(doc, "تاريخ التقرير", X + W - 120, y + 7, 110);
+    doc.font(FONT_EN).fontSize(8.2).fillColor(INK);
+    enText(doc, printedDate, X + W - 115, y + 18, 105, { align: "right" });
+    y += metaH + 12;
+
+    y = drawSectionBandV2(doc, "MATCH OVERVIEW", "ملخص المطابقة", X, y, W);
+    const submittedEnHeight = drawNameCardV2(doc, "SUBMITTED NAME", submittedParts.english, X, y, columnW, false);
+    const submittedArHeight = drawNameCardV2(doc, "الاسم محل الفحص", submittedParts.arabic, X + columnW + gap, y, columnW, true);
+    y += Math.max(submittedEnHeight, submittedArHeight) + 8;
+    const listedEnHeight = drawNameCardV2(doc, "LISTED RECORD NAME", nameEnParts.english || coreNameParts.english, X, y, columnW, false, GOLD);
+    const listedArHeight = drawNameCardV2(doc, "الاسم المدرج", nameArParts.arabic || coreNameParts.arabic, X + columnW + gap, y, columnW, true, GOLD);
+    y += Math.max(listedEnHeight, listedArHeight) + 13;
+
+    const typeMap: Record<string, string> = { individual: "Individual", organisation: "Organisation", vessel: "Vessel", unspecified: "Unspecified" };
+    drawPair(
+      "RECORD PROFILE", "ملف السجل",
+      "SOURCE RECORD", [
+        { label: "DATASET", value: splitValueByScriptForPdf(record.issuingBody || "").english },
+        { label: "ENTITY TYPE", value: typeMap[record.entityType || ""] || String(record.entityType || "—") },
+        { label: "LISTING DATE", value: String(record.listingDate || "—") },
+        { label: "SOURCE REFERENCE", value: uid },
+      ],
+      "البيانات العربية", [
+        { label: "الاسم", value: nameArParts.arabic },
+        { label: "الجنسية", value: nationalityParts.arabic },
+        { label: "مكان الميلاد", value: birthPlaceParts.arabic },
+        { label: "تاريخ الميلاد", value: splitValueByScriptForPdf(record.dateOfBirth || "").arabic },
+      ],
+    );
+
+    const listingRows = buildListingContextRows(record).reduce((map, [label, value]) => ({ ...map, [label]: value }), {} as Record<string, string>);
+    drawPair(
+      "LISTING CONTEXT", "سياق الإدراج",
+      "SOURCE CONTEXT", [
+        { label: "LISTING PROGRAMME", value: splitValueByScriptForPdf(listingRows["Listing Programme"] || "").english },
+        { label: "REASON FOR LISTING", value: reasonParts.english },
+        { label: "LEGAL BASIS", value: legalParts.english },
+        { label: "SOURCE REFERENCE", value: splitValueByScriptForPdf(listingRows["Source Reference"] || uid).english },
+        { label: "ISSUING BODY", value: splitValueByScriptForPdf(record.issuingBody || "").english },
+        { label: "ACTION REQUIRED", value: actionParts.english },
+        { label: "NOTES", value: notesParts.english },
+      ],
+      "التفاصيل العربية", [
+        { label: "سبب الإدراج", value: reasonParts.arabic },
+        { label: "الأساس القانوني", value: legalParts.arabic },
+        { label: "الإجراء المطلوب", value: actionParts.arabic },
+        { label: "ملاحظات", value: notesParts.arabic },
+      ],
+    );
+
+    if (enAliases !== "—" || arAliases !== "—") {
+      drawPair(
+        "ALTERNATIVE NAMES", "الأسماء البديلة",
+        "LATIN ALIASES", [{ label: "NAMES", value: enAliases }],
+        "الأسماء العربية", [{ label: "الأسماء", value: arAliases }],
+      );
+    }
+
+    const footerY = PH - 58;
+    const pageRange = doc.bufferedPageRange();
+    for (let pageIndex = 0; pageIndex < pageRange.count; pageIndex++) {
+      doc.switchToPage(pageIndex);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc.page as any).margins.bottom = 0;
+      hr(doc, footerY, X, X + W, BORDER, 0.45);
+      doc.font(FONT_EN).fontSize(6.8).fillColor(GRAY_LT);
+      enText(doc, "For compliance and due-diligence purposes only.", X, footerY + 8, W / 2 - 10);
+      doc.font(FONT_AR).fontSize(6.8).fillColor(GRAY_LT);
+      arText(doc, "للاستخدام في أغراض الامتثال والعناية الواجبة فقط.", X + W / 2, footerY + 8, W / 2 - 4);
+      doc.font(FONT_EN).fontSize(6.8).fillColor(GRAY_LT);
+      enText(doc, `Page ${pageIndex + 1} of ${pageRange.count}`, X, footerY + 22, W, { align: "center" });
+    }
+    doc.end();
+  } catch (error) {
+    console.error("[PDF Report Error]", error);
     if (!res.headersSent) res.status(500).json({ error: "Failed to generate PDF report" });
   }
 }

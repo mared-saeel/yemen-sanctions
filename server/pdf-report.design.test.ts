@@ -12,17 +12,16 @@ describe("quiet compliance PDF design", () => {
   });
 
   it("places the official logo in the header and uses a neutral record identifier", () => {
-    expect(reportSource).toContain('doc.image(LOGO_PATH, X + W - headerLogoWidth');
+    expect(reportSource).toContain('doc.image(LOGO_PATH, X + W - logoWidth');
     expect(reportSource).toContain('enText(doc, "RECORD UID"');
     expect(reportSource).not.toContain('WORLD-CHECK RECORD UID:');
     expect(reportSource).toContain('"SANCTIONS SCREENING REPORT"');
   });
 
-  it("uses compact table and footer spacing to avoid a mostly empty continuation page", () => {
-    expect(reportSource).toContain('return Math.max(22, Math.ceil(bodyValueHeight');
-    expect(reportSource).toContain("const CONTENT_BOTTOM = PH - 76;");
-    expect(reportSource).toContain("const footerY = PH - 64;");
-    expect(reportSource).toContain("return y + 16;");
-    expect(reportSource).toContain("let y = 34;");
+  it("uses separate left-to-right and right-to-left panels instead of mixed cells", () => {
+    expect(reportSource).toContain("function drawLanguagePanelV2");
+    expect(reportSource).toContain("function splitValueByScriptForPdf");
+    expect(reportSource).toContain("function drawNameCardV2");
+    expect(reportSource).toContain("const drawPair =");
   });
 });

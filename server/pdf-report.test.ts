@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildListingContextRows, parseRawNotesForPdf, sanitizeListingContextTextForPdf, tokenizeMixedTextForPdf } from "./pdf-report";
+import { buildListingContextRows, parseRawNotesForPdf, sanitizeListingContextTextForPdf, splitValueByScriptForPdf, tokenizeMixedTextForPdf } from "./pdf-report";
 
 describe("PDF report note parsing", () => {
   it("retains the full free-form bilingual note without dropping Arabic or Latin text", () => {
@@ -62,5 +62,12 @@ describe("PDF report note parsing", () => {
   it("removes bracket artifacts while keeping listing-context content readable", () => {
     expect(sanitizeListingContextTextForPdf("SDGT ( ) إرهابيون معينون عالميًا")).toBe("SDGT إرهابيون معينون عالميًا");
     expect(sanitizeListingContextTextForPdf("(SDGT) إرهابيون معينون عالميًا")).toBe("SDGT إرهابيون معينون عالميًا");
+  });
+
+  it("separates Arabic and Latin content into independent directional panels", () => {
+    expect(splitValueByScriptForPdf("مراجعة reference SC-1042 مطلوبة")).toEqual({
+      english: "reference SC-1042",
+      arabic: "مراجعة مطلوبة",
+    });
   });
 });
