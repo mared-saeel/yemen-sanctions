@@ -27,9 +27,9 @@ const LOGO_PATH = path.join(FONTS_DIR, "logo.png");
 const AR_FEAT: any[] = ["rtla", "arab", "init", "medi", "fina", "isol"];
 
 // Quiet compliance palette: one accent, one ink tone and one neutral table tone.
-const GOLD      = "#B7791F";
+const GOLD      = "#C17F3E";
 const INK       = "#1F2937";
-const BLUE      = GOLD;
+const ACCENT    = GOLD;
 const NAVY      = INK;
 const GRAY_ROW  = "#FAFBFC";
 const GRAY_HEAD = "#F5F6F8";
@@ -411,7 +411,7 @@ function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, 
   return Math.max(22, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
-async function handleGeneratePdfReportLegacy(req: Request, res: Response) {
+export async function handleGeneratePdfReport(req: Request, res: Response) {
   try {
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
     if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
@@ -597,8 +597,8 @@ async function handleGeneratePdfReportLegacy(req: Request, res: Response) {
       drawBodyValue(doc, record.nameAr!, X + c1 + 5, y + 7 + submittedDrawH, c2 - 10, 8, GRAY_MID);
     }
 
-    // Listed sanctions record name (blue)
-    const worldCheckDrawH = drawBodyValue(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10, 8.5, BLUE);
+    // Listed sanctions record name uses the platform's gold accent, not blue.
+    const worldCheckDrawH = drawBodyValue(doc, wcName, X + c1 + c2 + 5, y + 5, c3 - 10, 8.5, ACCENT);
     if (hasArName && wcName !== record.nameAr) {
       drawBodyValue(doc, record.nameAr!, X + c1 + c2 + 5, y + 7 + worldCheckDrawH, c3 - 10, 8, GRAY_MID);
     }
@@ -1459,7 +1459,7 @@ function drawLedgerSection(
   return cursorY + 12;
 }
 
-export async function handleGeneratePdfReport(req: Request, res: Response) {
+async function handleGeneratePdfReportLeftColumnDraft(req: Request, res: Response) {
   try {
     const ctx = await createContext({ req, res } as Parameters<typeof createContext>[0]);
     if (!ctx.user) return res.status(401).json({ error: "Unauthorized" });
