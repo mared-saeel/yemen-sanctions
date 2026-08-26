@@ -38,4 +38,10 @@ describe("quiet compliance PDF design", () => {
     expect(reportSource).toContain("const ACCENT    = GOLD");
     expect(reportSource).toContain("8.5, ACCENT");
   });
+
+  it("centers the Arabic footer directly beneath its English legal line", () => {
+    expect(reportSource).toContain("function drawCenteredArabicFooter");
+    expect(reportSource).toContain('drawCenteredArabicFooter(doc, "صادر عن منصة العقوبات اليمنية');
+    expect(reportSource).toContain('align: "center",\n    features: AR_FEAT');
+  });
 });

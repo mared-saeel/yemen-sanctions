@@ -98,6 +98,26 @@ function drawBodyValue(
   return height;
 }
 
+/** Draws the Arabic legal footer centered under its English counterpart. */
+function drawCenteredArabicFooter(
+  doc: PDFKit.PDFDocument,
+  value: string,
+  x: number,
+  y: number,
+  w: number,
+  sz: number,
+  color: string
+): void {
+  doc.font(FONT_MIXED).fontSize(sz).fillColor(color);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text(value, x, y, {
+    align: "center",
+    features: AR_FEAT,
+    width: w,
+    lineBreak: false,
+  });
+}
+
 /**
  * Render mixed Arabic+English text by splitting into word-groups and rendering each
  * group with the appropriate font. Groups are reversed for RTL visual order.
@@ -843,7 +863,7 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
         "This report is issued by Yemen Sanctions Platform. For compliance and due diligence purposes only.",
         X, footerY + 7, footerContentW, { align: "center" }
       );
-      drawBodyValue(doc, "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.", X, footerY + 20, footerContentW, 7.5, GRAY_LT);
+      drawCenteredArabicFooter(doc, "صادر عن منصة العقوبات اليمنية. للأغراض القانونية والامتثالية فقط.", X, footerY + 20, footerContentW, 7.5, GRAY_LT);
       doc.font(FONT_EN).fontSize(7).fillColor(GRAY_LT);
       enText(doc, `Page ${pageIndex + 1} of ${pageRange.count}`, X, footerY + 34, footerContentW, { align: "center" });
     }
