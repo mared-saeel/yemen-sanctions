@@ -181,6 +181,29 @@ function normalize(text: string): string {
   return normalizeEnglish(text);
 }
 
+/**
+ * Matches a normalized query as complete adjacent name tokens, never as a
+ * substring inside another token. For example, «أمين» matches «محمد أمين»
+ * but not «تأمين» or «داميني». This preserves valid partial multi-word
+ * searches while preventing short-name false positives.
+ */
+export function hasWholeNamePhraseForSearch(target: string, query: string): boolean {
+  const targetWords = normalize(target).split(/\s+/).filter(Boolean);
+  const queryWords = normalize(query).split(/\s+/).filter(Boolean);
+  if (!targetWords.length || !queryWords.length || queryWords.length > targetWords.length) return false;
+
+  return targetWords.some((_, start) =>
+    queryWords.every((word, offset) => targetWords[start + offset] === word)
+  );
+}
+
+/** A one-word Arabic query must occur as a complete token, not a close spelling. */
+export function hasExactArabicQueryTokenForSearch(target: string, query: string): boolean {
+  const queryWords = normalize(query).split(/\s+/).filter(Boolean);
+  if (queryWords.length !== 1 || queryWords[0].length < 3) return true;
+  return normalize(target).split(/\s+/).filter(Boolean).includes(queryWords[0]);
+}
+
 // ─── Levenshtein similarity ───────────────────────────────────────────────────
 
 function levenshteinSimilarity(a: string, b: string): number {
@@ -577,6 +600,13 @@ function scoreRecord(
   if (queryIsArabicLang && !queryIsEnglishLang && nameArWords.length === 0) {
     return { score: 0, matchType: "fuzzy" }; // Reject: Arabic query but no Arabic name
   }
+
+  // A short Arabic given name must be a complete token. Similar names such as
+  // «رامين»، «أمينة» and a substring like «داميني» must not pass through
+  // Jaro-Winkler or transliteration as an apparently exact result.
+  if (queryIsArabicLang && !queryIsEnglishLang && queryWords.length === 1 && !hasExactArabicQueryTokenForSearch(nameArForArabicSearch, query)) {
+    return { score: 0, matchType: "fuzzy" };
+  }
   
   // If query is pure English but record has no English name, reject immediately
   if (queryIsEnglishLang && !queryIsArabicLang && nameEnWords.length === 0) {
@@ -612,16 +642,16 @@ function scoreRecord(
   
   if (queryIsArabicLang && !queryIsEnglishLang) {
     // Arabic query: only search in Arabic names
-    queryInName = nNameAr.includes(nQuery);
-    nameInQuery = nQuery.includes(nNameAr);
+    queryInName = hasWholeNamePhraseForSearch(nameArForArabicSearch, query);
+    nameInQuery = hasWholeNamePhraseForSearch(query, nameArForArabicSearch);
   } else if (queryIsEnglishLang && !queryIsArabicLang) {
     // English query: only search in English names
-    queryInName = nNameEn.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
-    nameInQuery = nQuery.includes(nNameEn) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
+    queryInName = hasWholeNamePhraseForSearch(record.nameEn || "", query);
+    nameInQuery = hasWholeNamePhraseForSearch(query, record.nameEn || "");
   } else {
     // Mixed or unknown: search in both
-    queryInName = nNameEn.includes(nQuery) || nNameAr.includes(nQuery) || rawNameEn.includes(rawQuery) || searchNameEn.includes(searchQuery);
-    nameInQuery = nQuery.includes(nNameEn) || nQuery.includes(nNameAr) || rawQuery.includes(rawNameEn) || searchQuery.includes(searchNameEn);
+    queryInName = hasWholeNamePhraseForSearch(record.nameEn || "", query) || hasWholeNamePhraseForSearch(nameArForArabicSearch, query);
+    nameInQuery = hasWholeNamePhraseForSearch(query, record.nameEn || "") || hasWholeNamePhraseForSearch(query, nameArForArabicSearch);
   }
   
   if (queryInName || nameInQuery) {
@@ -633,8 +663,8 @@ function scoreRecord(
     return { score: 0.92, matchType: "exact" };
   }
   
-  const altQueryInName = nAltNames.some((n) => n.includes(nQuery)) || rawAltNames.some((n) => n.includes(rawQuery)) || searchAltNames.some((n) => n.includes(searchQuery));
-  const altNameInQuery = nAltNames.some((n) => nQuery.includes(n)) || rawAltNames.some((n) => rawQuery.includes(n)) || searchAltNames.some((n) => searchQuery.includes(n));
+  const altQueryInName = altNames.some((name) => hasWholeNamePhraseForSearch(name, query));
+  const altNameInQuery = altNames.some((name) => hasWholeNamePhraseForSearch(query, name));
   
   if (altQueryInName || altNameInQuery) {
     return { score: 0.88, matchType: "exact" };
@@ -953,6 +983,9 @@ export async function searchSanctions(options: SearchOptions): Promise<{
   const trimmedQuery = query.trim();
   const nQuery = normalize(trimmedQuery);
   const normalizedQuery = normalizeSearchText(trimmedQuery); // Remove punctuation/symbols for DB search
+  const isShortArabicNameQuery = isArabic(trimmedQuery)
+    && !/[a-zA-Z]/.test(trimmedQuery)
+    && nQuery.split(/\s+/).filter(Boolean).length === 1;
 
   // Build filter conditions
   const conditions = [];
@@ -1106,6 +1139,11 @@ export async function searchSanctions(options: SearchOptions): Promise<{
 
     const fuseResults = fuse.search(trimmedQuery);
     for (const fr of fuseResults) {
+      // For a short Arabic name such as «أمين», Fuse must not reintroduce
+      // similar spellings (رامين، أمينة) after the primary scorer rejected them.
+      if (isShortArabicNameQuery && !hasExactArabicQueryTokenForSearch(fr.item.nameAr || "", trimmedQuery)) {
+        continue;
+      }
       const existing = scored.find((s) => s.id === fr.item.id);
       if (!existing) {
         const fuseScore = fr.score !== undefined ? 1 - fr.score : 0.5;
