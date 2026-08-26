@@ -84,20 +84,21 @@ export default function ExportMenu({ query, results }: ExportMenuProps) {
           <meta charset="UTF-8">
           <title>Sanctions Screening Report</title>
           <style>
-            body { font-family: Arial, sans-serif; font-size: 12px; color: #333; margin: 20px; }
-            h1 { font-size: 18px; color: #1a1a2e; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; }
-            .meta { color: #666; margin-bottom: 20px; }
+            @page { size: A4; margin: 16mm; }
+            body { font-family: Arial, sans-serif; font-size: 12px; color: #1F2937; margin: 0; background: #FFFFFF; }
+            h1 { font-size: 18px; color: #1F2937; border-bottom: 1px solid #C8CDD8; padding-bottom: 8px; }
+            .meta { color: #667085; margin-bottom: 20px; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { background: #1e293b; color: white; padding: 8px; text-align: left; font-size: 11px; }
-            td { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
-            tr:nth-child(even) { background: #f8fafc; }
+            th { background: #F5F6F8; color: #1F2937; padding: 8px; text-align: left; font-size: 11px; border: 1px solid #C8CDD8; }
+            td { padding: 7px 8px; border: 1px solid #E4E7EC; font-size: 11px; }
+            tr:nth-child(even) { background: #FAFBFC; }
             .score-high { color: #16a34a; font-weight: bold; }
             .score-med { color: #d97706; font-weight: bold; }
             .score-low { color: #dc2626; font-weight: bold; }
           </style>
         </head>
         <body>
-          <h1>🔍 Sanctions Screening Report</h1>
+          <h1>Sanctions Screening Report</h1>
           <div class="meta">
             <strong>Query:</strong> ${query} &nbsp;|&nbsp;
             <strong>Results:</strong> ${results.length} &nbsp;|&nbsp;
