@@ -216,14 +216,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <Menu size={18} />
             </button>
             {/* Breadcrumb */}
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground font-medium">SanctionCheck</span>
-              {currentPage && (
-                <>
-                  <span className="text-border">/</span>
-                  <span className="font-semibold text-foreground">{currentPage.label}</span>
-                </>
-              )}
+            <div className="flex items-center gap-3 text-sm">
+              <div className="leading-tight">
+                <div className="font-semibold text-foreground">Yemen Sanctions</div>
+                <div className="mt-0.5 text-[10px] text-muted-foreground" dir="rtl">منصة العقوبات اليمنية</div>
+              </div>
+              {currentPage && <span className="h-7 border-l border-border" />}
+              {currentPage && <span className="font-semibold text-foreground">{currentPage.label}</span>}
             </div>
           </div>
 
