@@ -150,6 +150,23 @@ export async function updateCompany(id: number, data: Partial<InsertCompany>) {
   await db.update(companies).set(data).where(eq(companies.id, id));
 }
 
+export async function deleteSanctionRecord(recordId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select({ id: sanctionsRecords.id, nameEn: sanctionsRecords.nameEn })
+    .from(sanctionsRecords)
+    .where(eq(sanctionsRecords.id, recordId))
+    .limit(1);
+
+  const record = rows[0];
+  if (!record) return null;
+
+  await db.delete(sanctionsRecords).where(eq(sanctionsRecords.id, recordId));
+  return record;
+}
+
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
 export async function createAuditLog(data: InsertAuditLog) {

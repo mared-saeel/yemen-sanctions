@@ -9,13 +9,23 @@ import { Separator } from "@/components/ui/separator";
 import {
   Search, Filter, X, ChevronDown, ChevronUp, Zap, Clock,
   User, Building2, Ship, HelpCircle, AlertTriangle, CheckCircle,
-  Download, Eye, RotateCcw, Loader2, Sparkles
+  Download, Eye, RotateCcw, Loader2, Sparkles, Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import RecordModal from "@/components/RecordModal";
 import ExportMenu from "@/components/ExportMenu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const ENTITY_TYPES = [
   { value: null, label: "All Types", icon: <HelpCircle size={14} /> },
@@ -56,6 +66,7 @@ export default function SearchPage() {
   const [dateTo, setDateTo] = useState("");
   const [enableAI, setEnableAI] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [queryTime, setQueryTime] = useState(0);
@@ -76,6 +87,19 @@ export default function SearchPage() {
     },
     onError: (err) => {
       toast.error("Search failed: " + err.message);
+    },
+  });
+
+  const deleteRecordMutation = trpc.admin.deleteSanctionRecord.useMutation({
+    onSuccess: (_data, variables) => {
+      setResults((current) => current.filter((record) => record.id !== variables.id));
+      setTotal((current) => Math.max(0, current - 1));
+      setSelectedRecord((current) => current === variables.id ? null : current);
+      setDeleteTarget(null);
+      toast.success("تم حذف السجل وتوثيق العملية في سجل التدقيق");
+    },
+    onError: (error) => {
+      toast.error(`تعذر حذف السجل: ${error.message}`);
     },
   });
 
@@ -420,6 +444,7 @@ export default function SearchPage() {
                     result={result}
                     query={query}
                     onView={() => setSelectedRecord(result.id)}
+                    onDelete={() => setDeleteTarget({ id: result.id, name: result.nameEn })}
                   />
                 ))}
 
@@ -462,6 +487,36 @@ export default function SearchPage() {
           onClose={() => setSelectedRecord(null)}
         />
       )}
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteRecordMutation.isPending) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader className="text-right">
+            <AlertDialogTitle>حذف سجل عقوبات</AlertDialogTitle>
+            <AlertDialogDescription className="leading-6">
+              سيُحذف السجل <strong dir="ltr" className="text-foreground">{deleteTarget?.name}</strong> نهائياً من قاعدة البيانات.
+              هذه العملية مقصورة على المدير وسيتم تسجيلها في سجل التدقيق.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="sm:flex-row-reverse">
+            <AlertDialogCancel disabled={deleteRecordMutation.isPending}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteRecordMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteTarget) deleteRecordMutation.mutate({ id: deleteTarget.id });
+              }}
+            >
+              {deleteRecordMutation.isPending ? "جارٍ الحذف..." : "تأكيد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
@@ -472,10 +527,12 @@ function ResultCard({
   result,
   query,
   onView,
+  onDelete,
 }: {
   result: SearchResult;
   query: string;
   onView: () => void;
+  onDelete: () => void;
 }) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -567,6 +624,17 @@ function ResultCard({
               onClick={(e) => { e.stopPropagation(); navigate(`/record/${result.id}/edit`); }}
             >
               Edit
+            </Button>
+          )}
+          {user?.role === "admin" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            >
+              <Trash2 size={12} className="mr-1" />
+              Delete
             </Button>
           )}
         </div>

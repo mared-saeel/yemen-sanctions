@@ -19,6 +19,7 @@ import {
   createLocalUser,
   updateUserPassword,
   deleteUser,
+  deleteSanctionRecord,
   updateUserLastSignIn,
 } from "./db";
 import bcrypt from "bcryptjs";
@@ -322,6 +323,26 @@ export const appRouter = router({
         });
 
         return { success: true };
+      }),
+
+    deleteSanctionRecord: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const record = await deleteSanctionRecord(input.id);
+        if (!record) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Sanctions record not found" });
+        }
+
+        await createAuditLog({
+          userId: ctx.user.id,
+          companyId: ctx.user.companyId ?? undefined,
+          userName: ctx.user.name ?? undefined,
+          action: "admin",
+          query: `delete:record:${record.id}:${record.nameEn}`,
+          resultsCount: 1,
+        });
+
+        return { success: true, deletedRecord: record };
       }),
 
     auditLogs: router({

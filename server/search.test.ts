@@ -71,6 +71,7 @@ vi.mock("./db", () => ({
   updateCompany: vi.fn().mockResolvedValue(undefined),
   updateUserStatus: vi.fn().mockResolvedValue(undefined),
   updateUserRole: vi.fn().mockResolvedValue(undefined),
+  deleteSanctionRecord: vi.fn().mockResolvedValue({ id: 1, nameEn: "SADDAM HUSSEIN" }),
   getAuditLogs: vi.fn().mockResolvedValue({ logs: [], total: 0 }),
   getDashboardStats: vi.fn().mockResolvedValue({
     totalRecords: 39710,
@@ -220,6 +221,22 @@ describe("admin", () => {
     const ctx = createUserContext("user");
     const caller = appRouter.createCaller(ctx);
     await expect(caller.admin.stats()).rejects.toThrow("Admin access required");
+  });
+
+  it("allows only an admin to delete a sanctions record and writes an audit log", async () => {
+    const { deleteSanctionRecord, createAuditLog } = await import("./db");
+    const adminCaller = appRouter.createCaller(createUserContext("admin"));
+    const result = await adminCaller.admin.deleteSanctionRecord({ id: 1 });
+
+    expect(result).toEqual({ success: true, deletedRecord: { id: 1, nameEn: "SADDAM HUSSEIN" } });
+    expect(deleteSanctionRecord).toHaveBeenCalledWith(1);
+    expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "admin",
+      query: "delete:record:1:SADDAM HUSSEIN",
+    }));
+
+    const userCaller = appRouter.createCaller(createUserContext("user"));
+    await expect(userCaller.admin.deleteSanctionRecord({ id: 1 })).rejects.toThrow("Admin access required");
   });
 
   it("lists users for admin", async () => {
