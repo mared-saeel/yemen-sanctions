@@ -16,8 +16,10 @@ describe("search UI redesign guardrails", () => {
   it("keeps the original platform logo and adds the operational review UI", () => {
     expect(appLayout).toMatch(/logo\.png|logoUrl|logo/i);
     expect(appLayout).toContain("منصة العقوبات اليمنية");
-    expect(searchPage).toContain("Search the sanctions database");
-    expect(searchPage).toContain("Review ranked matches below");
+    expect(searchPage).toContain("Yemen Sanctions");
+    expect(searchPage).toContain("<table");
+    expect(searchPage).toContain("Ranked by confidence");
+    expect(searchPage).toContain("Listed date");
     expect(searchPage).toContain("Matching and transliteration checks use the existing search engine.");
     expect(searchPage).toContain("Exact match");
     expect(searchPage).toContain("Possible match");

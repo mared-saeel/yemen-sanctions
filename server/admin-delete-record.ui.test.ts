@@ -10,6 +10,6 @@ describe("admin sanctions-record deletion UI", () => {
     expect(pageSource).toContain("حذف سجل عقوبات");
     expect(pageSource).toContain("تأكيد الحذف");
     expect(pageSource).toContain('user?.role === "admin"');
-    expect(pageSource).toContain("<Trash2");
+    expect(pageSource).toContain("onDelete(result)");
   });
 });

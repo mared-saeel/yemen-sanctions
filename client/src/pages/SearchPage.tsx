@@ -151,11 +151,11 @@ export default function SearchPage() {
     <AppLayout>
       <div className="flex h-full">
         {/* Left Sidebar - Filters */}
-        <aside className="w-[272px] flex-shrink-0 border-r border-border bg-sidebar flex flex-col overflow-y-auto hidden lg:flex">
-          <div className="px-5 py-5 border-b border-sidebar-border">
+        <aside className="w-[236px] flex-shrink-0 border-r border-border bg-sidebar flex flex-col overflow-y-auto hidden lg:flex">
+          <div className="px-4 py-4 border-b border-sidebar-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <div className="flex h-8 w-8 items-center justify-center bg-primary/10 text-primary">
                   <SlidersHorizontal size={15} />
                 </div>
                 <div>
@@ -169,16 +169,16 @@ export default function SearchPage() {
             </div>
           </div>
 
-          <div className="px-5 py-5 space-y-5 flex-1">
+          <div className="px-4 py-4 space-y-4 flex-1">
             {/* Mode */}
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Mode</div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-primary text-white text-sm font-semibold cursor-pointer shadow-sm">
+                <div className="flex items-center gap-2.5 px-3 py-2.5 bg-primary text-white text-sm font-semibold cursor-pointer shadow-sm">
                   <span className="h-1.5 w-1.5 rounded-full bg-white/90" /> Single screening
                 </div>
                 <div
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-muted-foreground text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
+                  className="flex items-center gap-2 px-3 py-2 text-muted-foreground text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
                   onClick={() => toast.info("Batch screening coming soon")}
                 >
                   Batch screening
@@ -197,7 +197,7 @@ export default function SearchPage() {
                     key={String(et.value)}
                     onClick={() => setEntityType(et.value as EntityType)}
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm cursor-pointer transition-all duration-150",
+                      "flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer transition-all duration-150",
                       entityType === et.value
                         ? "bg-primary text-white font-semibold shadow-sm"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -215,7 +215,7 @@ export default function SearchPage() {
             {/* Check Types */}
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Check Types</div>
-              <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-accent/60 border border-border">
+              <div className="flex items-center justify-between px-3 py-2.5 bg-accent/60 border border-border">
                 <div className="flex items-center gap-2 text-sm text-foreground">
                   <span>🛡️</span> Sanctions Database
                 </div>
@@ -231,7 +231,7 @@ export default function SearchPage() {
             <div>
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">AI Enhancement</div>
               <div
-                className="flex items-center justify-between px-3 py-2.5 rounded-md bg-accent/60 border border-border cursor-pointer hover:bg-accent transition-colors"
+                className="flex items-center justify-between px-3 py-2.5 bg-accent/60 border border-border cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => setEnableAI(!enableAI)}
               >
                 <div className="flex items-center gap-2 text-sm text-foreground">
@@ -301,23 +301,22 @@ export default function SearchPage() {
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Search Header */}
-          <div className="border-b border-border bg-card px-6 py-6 lg:px-8">
-            <div className="max-w-5xl">
-              <div className="mb-5 flex items-start justify-between gap-5">
-                <div>
-                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-primary">
-                    <ShieldCheck size={14} /> Sanctions screening
-                  </div>
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground">Search the sanctions database</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Review individuals, organisations and vessels using the existing matching engine.</p>
+          <div className="border-b border-border bg-card px-6 py-5 lg:px-8">
+            <div className="max-w-none">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-muted-foreground">Yemen Sanctions</span>
+                  <span className="text-border">/</span>
+                  <span className="font-semibold text-foreground">Screening</span>
                 </div>
-                <div className="hidden sm:flex items-center gap-2 border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-emerald-600" /> Database available
+                <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                  <ShieldCheck size={14} className="text-primary" />
+                  <span>Sanctions database</span>
                 </div>
               </div>
 
               {/* Search Bar */}
-              <div className="relative border border-border bg-background p-2 shadow-sm">
+              <div className="relative">
                 <div className="flex gap-2">
                   <div className="flex-1 relative">
                     <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -327,7 +326,7 @@ export default function SearchPage() {
                       onChange={(e) => setQuery(e.target.value)}
                       onKeyDown={handleKeyDown}
                       placeholder="Enter name to screen (Arabic or English)..."
-                      className="pl-11 h-12 border-0 bg-transparent text-foreground placeholder:text-muted-foreground text-sm focus-visible:ring-0 shadow-none"
+                      className="pl-11 h-12 border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus-visible:ring-2 focus-visible:ring-primary/20 shadow-none"
                     />
                     {query && (
                       <button
@@ -341,7 +340,7 @@ export default function SearchPage() {
                   <Button
                     onClick={() => handleSearch(0)}
                     disabled={searchMutation.isPending}
-                    className="h-12 px-7 bg-primary hover:bg-primary/90 text-primary-foreground font-bold tracking-wide shadow-sm"
+                    className="h-12 min-w-28 px-7 bg-primary hover:bg-primary/90 text-primary-foreground font-bold tracking-wide shadow-sm"
                   >
                     {searchMutation.isPending ? (
                       <Loader2 size={16} className="animate-spin" />
@@ -393,10 +392,10 @@ export default function SearchPage() {
           </div>
 
           {/* Results Area */}
-          <div className="flex-1 overflow-y-auto bg-muted/25 px-6 py-6 lg:px-8">
+          <div className="flex-1 overflow-y-auto bg-background px-6 py-5 lg:px-8">
             {/* Search Stats */}
             {hasSearched && (
-              <div className="mb-5 flex items-center justify-between border-y border-border bg-card px-4 py-3">
+              <div className="mb-5 flex items-center justify-between bg-muted/45 px-4 py-3">
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <FileSearch size={16} className="text-primary" />
                   <span className="font-semibold text-foreground">{total}</span> results found
@@ -415,7 +414,7 @@ export default function SearchPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Review ranked matches below</span>
+                  <span className="text-xs text-muted-foreground">Ranked by confidence</span>
                 </div>
               </div>
             )}
@@ -484,15 +483,12 @@ export default function SearchPage() {
 
             {/* Results List */}
             {results.length > 0 && (
-              <div className="space-y-3">
-                {results.map((result) => (
-                  <ResultCard
-                    key={result.id}
-                    result={result}
-                    onView={() => setSelectedRecord(result.id)}
-                    onDelete={() => setDeleteTarget({ id: result.id, name: result.nameEn })}
-                  />
-                ))}
+              <div>
+                <ResultsTable
+                  results={results}
+                  onView={(id) => setSelectedRecord(id)}
+                  onDelete={(result) => setDeleteTarget({ id: result.id, name: result.nameEn })}
+                />
 
                 {/* Pagination */}
                 {total > 20 && (
@@ -567,114 +563,71 @@ export default function SearchPage() {
   );
 }
 
-// ─── Result Card ──────────────────────────────────────────────────────────────
+// ─── Results Review Table ─────────────────────────────────────────────────────
 
-function ResultCard({
-  result,
+function ResultsTable({
+  results,
   onView,
   onDelete,
 }: {
-  result: SearchResult;
-  onView: () => void;
-  onDelete: () => void;
+  results: SearchResult[];
+  onView: (id: number) => void;
+  onDelete: (result: SearchResult) => void;
 }) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const scoreColor =
-    result.matchScore >= 85 ? "score-high" :
-    result.matchScore >= 60 ? "score-medium" : "score-low";
-
-  const entityIcon =
-    result.entityType === "individual" ? <User size={14} /> :
-    result.entityType === "organisation" ? <Building2 size={14} /> :
-    result.entityType === "vessel" ? <Ship size={14} /> :
-    <HelpCircle size={14} />;
-
-  const matchLabel = result.matchScore >= 85 ? "Exact match" : result.matchScore >= 60 ? "Possible match" : "Low confidence";
-  const matchBadgeClass = result.matchScore >= 85
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : result.matchScore >= 60
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : "border-slate-200 bg-slate-50 text-slate-700";
 
   return (
-    <div
-      className="group cursor-pointer border border-border bg-card transition-colors hover:border-primary/45"
-      onClick={onView}
-    >
-      <div className="flex items-stretch">
-        <div className={cn("w-1 flex-shrink-0", result.matchScore >= 85 ? "bg-emerald-500" : result.matchScore >= 60 ? "bg-amber-500" : "bg-slate-300")} />
-        <div className="min-w-0 flex-1 px-5 py-4">
-          <div className="flex items-start justify-between gap-5">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <BadgeCheck size={16} className="flex-shrink-0 text-primary" />
-                <span className="truncate text-base font-semibold text-foreground">{result.nameEn}</span>
-              </div>
-              {result.nameAr && (
-                <div className="mt-1 pl-6 text-sm text-muted-foreground" dir="rtl">{result.nameAr}</div>
-              )}
-              {result.alternativeNames && result.alternativeNames.length > 0 && (
-                <div className="mt-2 truncate pl-6 text-xs text-muted-foreground">
-                  Also known as: {result.alternativeNames.slice(0, 3).join(", ")}
-                  {result.alternativeNames.length > 3 && ` +${result.alternativeNames.length - 3} more`}
-                </div>
-              )}
-            </div>
-            <div className={cn("flex-shrink-0 border px-2.5 py-1 text-right text-xs font-bold", matchBadgeClass)}>
-              <div>{result.matchScore}%</div>
-              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide">{matchLabel}</div>
-            </div>
-          </div>
+    <div className="overflow-x-auto border-y border-border bg-card">
+      <table className="min-w-[980px] w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b border-border text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+            <th className="w-36 px-3 py-3">Match</th>
+            <th className="min-w-64 px-3 py-3">Name</th>
+            <th className="w-28 px-3 py-3">Type</th>
+            <th className="w-32 px-3 py-3">Source</th>
+            <th className="w-32 px-3 py-3">Listed date</th>
+            <th className="w-36 px-3 py-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((result) => {
+            const matchLabel = result.matchScore >= 85 ? "Exact match" : result.matchScore >= 60 ? "Possible match" : "Low confidence";
+            const matchBadgeClass = result.matchScore >= 85
+              ? "bg-emerald-50 text-emerald-800"
+              : result.matchScore >= 60
+                ? "bg-amber-50 text-amber-800"
+                : "bg-slate-100 text-slate-700";
+            const entityIcon = result.entityType === "individual" ? <User size={13} /> : result.entityType === "organisation" ? <Building2 size={13} /> : result.entityType === "vessel" ? <Ship size={13} /> : <HelpCircle size={13} />;
 
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="text-foreground">{entityIcon}</span><span className="capitalize">{result.entityType}</span></span>
-            {result.nationality && <span>Nationality: <strong className="font-medium text-foreground">{result.nationality}</strong></span>}
-            {result.issuingBody && <span>Source: <strong className="font-medium text-foreground">{result.issuingBody}</strong></span>}
-            {result.listingDate && <span>Listed: <strong className="font-medium text-foreground">{result.listingDate}</strong></span>}
-          </div>
-
-          {(result.listingReason || result.actionTaken) && (
-            <div className="mt-3 flex items-center gap-2 text-xs">
-              <AlertTriangle size={13} className="flex-shrink-0 text-amber-600" />
-              <span className="font-medium text-foreground">{result.listingReason || result.actionTaken}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex w-28 flex-shrink-0 flex-col items-end justify-center gap-1 border-l border-border bg-muted/20 px-3 py-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-full justify-end text-xs text-muted-foreground hover:text-primary"
-            onClick={(e) => { e.stopPropagation(); onView(); }}
-          >
-            <Eye size={12} className="mr-1" />
-            View
-          </Button>
-          {user?.role === "admin" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-full justify-end text-xs text-primary hover:text-primary"
-              onClick={(e) => { e.stopPropagation(); navigate(`/record/${result.id}/edit`); }}
-            >
-              Edit
-            </Button>
-          )}
-          {user?.role === "admin" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-full justify-end text-xs text-destructive hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            >
-              <Trash2 size={12} className="mr-1" />
-              Delete
-            </Button>
-          )}
-        </div>
-      </div>
+            return (
+              <tr key={result.id} className="border-b border-border last:border-b-0 hover:bg-muted/25">
+                <td className="px-3 py-4 align-middle">
+                  <div className={cn("inline-flex flex-col gap-0.5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide", matchBadgeClass)}>
+                    <span>{matchLabel}</span><span>{result.matchScore}%</span>
+                  </div>
+                </td>
+                <td className="px-3 py-4 align-middle">
+                  <button onClick={() => onView(result.id)} className="block max-w-full text-left hover:text-primary">
+                    <div className="flex items-center gap-2 font-semibold text-foreground"><BadgeCheck size={15} className="text-primary" />{result.nameEn}</div>
+                    {result.nameAr && <div className="mt-1 text-sm text-muted-foreground" dir="rtl">{result.nameAr}</div>}
+                    {result.alternativeNames?.length > 0 && <div className="mt-1 max-w-[280px] truncate text-[11px] text-muted-foreground">AKA: {result.alternativeNames.slice(0, 2).join(", ")}</div>}
+                  </button>
+                </td>
+                <td className="px-3 py-4 align-middle"><span className="inline-flex items-center gap-1.5 border border-border px-2 py-1 text-xs text-foreground">{entityIcon}<span className="capitalize">{result.entityType}</span></span></td>
+                <td className="px-3 py-4 align-middle text-sm text-foreground">{result.issuingBody || result.nationality || "—"}</td>
+                <td className="px-3 py-4 align-middle text-sm text-foreground">{result.listingDate || "—"}</td>
+                <td className="px-3 py-4 align-middle">
+                  <div className="flex justify-end gap-2 text-xs">
+                    <button onClick={() => onView(result.id)} className="text-muted-foreground hover:text-primary">View</button>
+                    {user?.role === "admin" && <><span className="text-border">|</span><button onClick={() => navigate(`/record/${result.id}/edit`)} className="text-muted-foreground hover:text-primary">Edit</button><span className="text-border">|</span><button onClick={() => onDelete(result)} className="text-destructive hover:underline">Delete</button></>}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
