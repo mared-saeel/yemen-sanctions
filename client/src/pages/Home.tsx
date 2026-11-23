@@ -48,9 +48,7 @@ const copy = {
     newsTitle: "أخبار وروابط مصرفية مهمة",
     newsDescription: "ملخصات منتقاة من مصادر رسمية، مع روابط مباشرة للمصدر الأصلي.",
     clientsEyebrow: "عملاؤنا",
-    clientsTitle: "ثقة مؤسسات يمنية رائدة",
-    clientsDescription: "نفخر بثقة مؤسسات تعمل في قطاعات الصناعة والتمويل والصرافة، وتستخدم المنصة لدعم إجراءات الامتثال والفحص.",
-    clientTrust: "شراكات مهنية مبنية على الثقة والامتثال",
+    clientsTitle: "عملاؤنا",
     source: "المصدر",
     openSource: "عرض المصدر",
     previous: "السابق",
@@ -102,9 +100,7 @@ const copy = {
     newsTitle: "Important banking news & links",
     newsDescription: "Editor-reviewed summaries from official sources, with direct links to each original source.",
     clientsEyebrow: "Our clients",
-    clientsTitle: "Trusted by leading Yemeni institutions",
-    clientsDescription: "We are proud to support institutions across industry, microfinance and exchange services with practical compliance screening.",
-    clientTrust: "Professional partnerships built on trust and compliance",
+    clientsTitle: "Our clients",
     source: "Source",
     openSource: "Open source",
     previous: "Previous",
@@ -168,34 +164,16 @@ const clientProfiles = [
   {
     nameAr: "وزارة الصناعة والتجارة - العاصمة عدن",
     nameEn: "Ministry of Industry and Trade — Aden",
-    typeAr: "جهة حكومية",
-    typeEn: "Government entity",
-    descriptionAr: "دعم إجراءات الفحص والامتثال للجهات الحكومية والقطاع التجاري.",
-    descriptionEn: "Supporting screening and compliance workflows across government and commercial sectors.",
-    icon: Landmark,
-    mark: "MIT",
     logo: "/manus-storage/ministry-industry-trade-logo_f8b423ef.webp",
   },
   {
     nameAr: "بنك عدن الإسلامي للتمويل الأصغر",
     nameEn: "Aden Islamic Bank for Microfinance",
-    typeAr: "مؤسسة مالية",
-    typeEn: "Financial institution",
-    descriptionAr: "حلول فحص عملية تساعد فرق الالتزام على اتخاذ قرارات أسرع وأكثر وضوحاً.",
-    descriptionEn: "Practical screening tools that help compliance teams make faster, clearer decisions.",
-    icon: Landmark,
-    mark: "AIB",
     logo: "/manus-storage/aden-islamic-bank-logo_67f46958.png",
   },
   {
     nameAr: "شركة البدر الكامل للصرافة",
     nameEn: "Al-Badr Al-Kamel Exchange",
-    typeAr: "شركة صرافة",
-    typeEn: "Exchange company",
-    descriptionAr: "تعزيز إجراءات التحقق من العملاء والجهات قبل تنفيذ العمليات المالية.",
-    descriptionEn: "Strengthening customer and entity verification before financial transactions.",
-    icon: Users,
-    mark: "BK",
     logo: "/manus-storage/al-bader-al-kamel-exchange-logo_d539424d.png",
   },
 ];
@@ -237,8 +215,10 @@ export default function Home() {
   const [, navigate] = useLocation();
   const [lang, setLang] = useState<Language>("ar");
   const [activeNews, setActiveNews] = useState(0);
+  const [activeClient, setActiveClient] = useState(0);
   const tx = copy[lang];
   const activeItem = financialNews[activeNews];
+  const activeClientItem = clientProfiles[activeClient];
 
   useEffect(() => {
     if (!loading && isAuthenticated) navigate("/search");
@@ -247,6 +227,13 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setActiveNews((current) => (current + 1) % financialNews.length);
+    }, 6500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveClient((current) => (current + 1) % clientProfiles.length);
     }, 6500);
     return () => window.clearInterval(timer);
   }, []);
@@ -341,48 +328,43 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="border-b border-slate-100 bg-slate-50/70 px-6 py-16 lg:px-8 lg:py-20" aria-labelledby="clients-title">
+      <section id="clients" className="bg-white px-6 py-20 lg:px-8" aria-labelledby="clients-title">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-11 text-center">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800 shadow-sm">
+          <div className="mb-10 flex flex-col gap-4 text-center md:mx-auto md:max-w-2xl">
+            <div className="inline-flex items-center justify-center gap-2 self-center rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
               <Users size={13} />
               {tx.clientsEyebrow}
             </div>
             <h2 id="clients-title" className="text-3xl font-extrabold tracking-tight text-slate-950 md:text-4xl">{tx.clientsTitle}</h2>
-            <p className="mx-auto mt-4 max-w-2xl leading-8 text-slate-600">{tx.clientsDescription}</p>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-3">
-            {clientProfiles.map((client) => {
-              const ClientIcon = client.icon;
-              const name = lang === "ar" ? client.nameAr : client.nameEn;
-              const type = lang === "ar" ? client.typeAr : client.typeEn;
-              const description = lang === "ar" ? client.descriptionAr : client.descriptionEn;
-
-              return (
-                <article key={client.nameAr} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-amber-200 hover:shadow-lg hover:shadow-slate-200/70">
-                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-l from-amber-600 via-amber-400 to-transparent opacity-80" />
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex h-16 min-w-0 flex-1 items-center justify-center rounded-2xl border border-slate-100 bg-white px-3">
-                      {client.logo ? (
-                        <img src={client.logo} alt={name} className="max-h-14 max-w-full object-contain" />
-                      ) : (
-                        <ClientIcon size={25} strokeWidth={1.7} className="text-amber-700" />
-                      )}
-                    </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-extrabold tracking-[0.14em] text-slate-400" dir="ltr">{client.mark}</span>
+          <article className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
+            <div className="grid min-h-[330px] md:grid-cols-2">
+              <div className="order-2 flex items-center justify-center border-t border-slate-200 bg-white p-10 md:order-1 md:border-t-0 md:border-l">
+                <img key={activeClientItem.logo} src={activeClientItem.logo} alt={lang === "ar" ? activeClientItem.nameAr : activeClientItem.nameEn} className="max-h-40 w-full max-w-[420px] object-contain transition-opacity duration-700" />
+              </div>
+              <div className="order-1 flex flex-col justify-center p-8 text-center md:order-2 md:p-12 md:text-right">
+                <h3 className="text-2xl font-extrabold leading-snug text-slate-950 md:text-3xl">
+                  {lang === "ar" ? activeClientItem.nameAr : activeClientItem.nameEn}
+                </h3>
+                <div className="mt-9 flex items-center justify-center gap-4 border-t border-slate-200 pt-5 md:justify-between">
+                  <div className="flex gap-2">
+                    {clientProfiles.map((client, index) => (
+                      <button key={client.nameAr} aria-label={`client-${index + 1}`} onClick={() => setActiveClient(index)} className={`h-2.5 rounded-full transition-all ${index === activeClient ? "w-7 bg-amber-600" : "w-2.5 bg-slate-300 hover:bg-slate-400"}`} />
+                    ))}
                   </div>
-                  <p className="mt-6 text-xs font-bold text-amber-700">{type}</p>
-                  <h3 className="mt-2 min-h-[3.5rem] text-lg font-extrabold leading-7 text-slate-900">{name}</h3>
-                  <p className="mt-4 text-sm leading-7 text-slate-600">{description}</p>
-                  <div className="mt-6 flex items-center gap-2 border-t border-slate-100 pt-4 text-xs font-semibold text-slate-400">
-                    <ShieldCheck size={14} className="text-amber-600" />
-                    <span>{tx.clientTrust}</span>
+                  <div className="flex gap-2">
+                    <button aria-label={tx.previous} onClick={() => setActiveClient((activeClient - 1 + clientProfiles.length) % clientProfiles.length)} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-700 hover:border-amber-300 hover:text-amber-700">
+                      {lang === "ar" ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
+                    </button>
+                    <button aria-label={tx.next} onClick={() => setActiveClient((activeClient + 1) % clientProfiles.length)} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-700 hover:border-amber-300 hover:text-amber-700">
+                      {lang === "ar" ? <ChevronLeft size={17} /> : <ChevronRight size={17} />}
+                    </button>
                   </div>
-                </article>
-              );
-            })}
-          </div>
+                </div>
+              </div>
+            </div>
+          </article>
         </div>
       </section>
 
