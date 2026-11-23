@@ -27,4 +27,14 @@ describe("homepage public information", () => {
     expect(homePage).toContain("/manus-storage/yemen-finance-payments_42cc87df.jpg");
     expect(homePage).toContain("/manus-storage/yemen-finance-banking_ea1d2bb3.jpg");
   });
+
+  it("presents the three current clients with their official logo assets", () => {
+    expect(homePage).toContain("وزارة الصناعة والتجارة - العاصمة عدن");
+    expect(homePage).toContain("بنك عدن الإسلامي للتمويل الأصغر");
+    expect(homePage).toContain("شركة البدر الكامل للصرافة");
+    expect(homePage).toContain("/manus-storage/ministry-industry-trade-logo_f8b423ef.webp");
+    expect(homePage).toContain("/manus-storage/aden-islamic-bank-logo_67f46958.png");
+    expect(homePage).toContain("/manus-storage/al-bader-al-kamel-exchange-logo_d539424d.png");
+    expect(homePage).toContain("clientsTitle");
+  });
 });
