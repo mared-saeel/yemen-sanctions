@@ -10,4 +10,9 @@ describe("search workspace layout", () => {
     expect(appLayout).toContain('className="flex h-screen bg-background overflow-hidden" dir="ltr"');
     expect(searchPage.indexOf("{/* Left Sidebar - Filters */}")).toBeLessThan(searchPage.indexOf("{/* Main Content */}"));
   });
+
+  it("uses the durable local Al-Mustashar logo in the application sidebar", () => {
+    expect(appLayout).toContain('src="/almustashar-logo.png"');
+    expect(appLayout).not.toContain("private-us-east-1.manuscdn.com");
+  });
 });
