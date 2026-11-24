@@ -10,7 +10,8 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { getRecordById } from "./search-engine";
 import { createContext } from "./_core/context";
-// bidi-js removed — PDFKit with NotoSansArabic handles Arabic natively when text is passed directly
+import { bidiTextHeight, drawBidiText, type BidiAlign } from "./pdf-bidi";
+import { actionToText, formatSanctionsRecord } from "../shared/record-formatter";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dir = path.dirname(__filename);
@@ -41,6 +42,10 @@ const BORDER    = "#C8CDD8";
 
 function isAr(t: string) { return /[\u0600-\u06FF]/.test(t); }
 
+/** Font pairs for the Unicode bidi renderer: Cairo for Arabic runs, Noto Sans for Latin and digits. */
+const BIDI_FONTS = { arabic: FONT_MIXED, latin: FONT_EN };
+const BIDI_FONTS_BOLD = { arabic: FONT_AR_B, latin: FONT_EN_B };
+
 /**
  * Draw Arabic text right-aligned.
  * PDFKit + NotoSansArabic handles Arabic shaping natively — no BiDi reordering needed.
@@ -57,45 +62,24 @@ function arText(doc: PDFKit.PDFDocument, t: string, x: number, y: number, w: num
  */
 function bodyValueHeight(doc: PDFKit.PDFDocument, text: string, w: number, sz: number): number {
   const value = text && text !== "—" ? text : "—";
-  const hasArabic = isAr(value);
-  const hasLatin = /[a-zA-Z0-9]/.test(value);
-  if (hasArabic && hasLatin) return mixedTextHeight(doc, value, w, sz);
-  doc.font(hasArabic ? FONT_MIXED : FONT_EN).fontSize(sz);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return Math.max(sz + 2, (doc as any).heightOfString(value, {
-    align: hasArabic ? "right" : "left",
-    features: hasArabic ? AR_FEAT : undefined,
-    width: w,
-    lineBreak: true,
-    lineGap: 1,
-  }));
+  return Math.max(sz + 2, bidiTextHeight(doc, value, w, sz, BIDI_FONTS));
 }
 
+/**
+ * Every body value is laid out with the Unicode Bidirectional Algorithm, so
+ * numbers, dates, brackets and Latin words keep their correct position inside
+ * Arabic sentences (and vice versa).
+ */
 function drawBodyValue(
   doc: PDFKit.PDFDocument,
   text: string,
   x: number, y: number, w: number,
   sz: number,
-  color = BLACK
+  color = BLACK,
+  align: BidiAlign = "auto"
 ): number {
   const value = text && text !== "—" ? text : "—";
-  const hasArabic = isAr(value);
-  const hasLatin = /[a-zA-Z0-9]/.test(value);
-  if (hasArabic && hasLatin) {
-    renderMixedRTL(doc, value, x, y, w, sz, color);
-    return mixedTextHeight(doc, value, w, sz);
-  }
-  const height = bodyValueHeight(doc, value, w, sz);
-  doc.font(hasArabic ? FONT_MIXED : FONT_EN).fontSize(sz).fillColor(value === "—" ? GRAY_MID : color);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (doc as any).text(value, x, y, {
-    align: hasArabic ? "right" : "left",
-    features: hasArabic ? AR_FEAT : undefined,
-    width: w,
-    lineBreak: true,
-    lineGap: 1,
-  });
-  return height;
+  return Math.max(sz + 2, drawBidiText(doc, value, x, y, w, sz, value === "—" ? GRAY_MID : color, BIDI_FONTS, align));
 }
 
 /** Draws the Arabic legal footer centered under its English counterpart. */
@@ -412,7 +396,7 @@ function tableRow(
     if (arPart) {
       doc.font(FONT_AR_B).fontSize(sz - 1).fillColor(BLACK);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (doc as any).text(arPart, x + 5, labelY + lineH + 2, { align: "right", features: AR_FEAT, width: labelW - 10, lineBreak: false });
+      drawBidiText(doc, arPart, x + 5, labelY + lineH - 1, labelW - 10, sz - 1.5, GRAY_MID, BIDI_FONTS_BOLD, "left");
     }
   } else {
     doc.font(FONT_EN_B).fontSize(sz - 1).fillColor(BLACK);
@@ -428,7 +412,7 @@ function tableRow(
 function tableRowHeight(doc: PDFKit.PDFDocument, value: string, labelW: number, totalW: number, sz: number): number {
   const valW = totalW - labelW;
   // 22pt preserves bilingual labels while avoiding an orphan continuation page for short records.
-  return Math.max(22, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
+  return Math.max(24, Math.ceil(bodyValueHeight(doc, value || "—", valW - 10, sz)) + 10);
 }
 
 export async function handleGeneratePdfReport(req: Request, res: Response) {
@@ -624,230 +608,183 @@ export async function handleGeneratePdfReport(req: Request, res: Response) {
     }
     y += nRH + 10;
 
-    // -- KEY DATA --------------------------------------------------------------
+    // -- STRUCTURED RECORD CONTENT -------------------------------------------
+    // All sections below come from the shared presenter, so the PDF shows the
+    // same clean, de-duplicated structure as the platform (no raw technical IDs).
     const LW = 130;
+    const formatted = formatSanctionsRecord(record);
     const typeMap: Record<string, string> = {
-      individual: "Individual", organisation: "Organisation",
-      vessel: "Vessel", unspecified: "Unspecified",
+      individual: "Individual / فرد", organisation: "Organisation / كيان",
+      vessel: "Vessel / سفينة", unspecified: "Unspecified / غير محدد",
     };
 
-    const keyRows: [string, string][] = [
-      ["Dataset",       record.issuingBody || "—"],
-      ["Category",      record.entityType ? (typeMap[record.entityType] || record.entityType) : "—"],
-      ["Name",          record.nameEn || record.nameAr || "—"],
-      ["Citizenship",   record.nationality || "—"],
-      ["Date of Birth", record.dateOfBirth || "—"],
-      ["Place of Birth",record.placeOfBirth || "—"],
-      ["Listing Date",  record.listingDate || "—"],
-      ["Issuing Body",  record.issuingBody || "—"],
-    ];
-
-    ensureSpace(16 + tableRowHeight(doc, keyRows[0][1], LW, W, 8.5), "KEY DATA / البيانات الجوهرية");
-    y = sectionHead(doc, "KEY DATA / البيانات الجوهرية", X, y, W);
-
-    let shade = false;
-    for (const [label, value] of keyRows) {
-      ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "KEY DATA / البيانات الجوهرية");
-      y = tableRow(doc, label, value, X, y, LW, W, shade, 8.5);
-      shade = !shade;
-    }
-
-    y += 10;
-
-    // -- LISTING CONTEXT -------------------------------------------------------
-    // This section is populated only with factual fields present in the source record.
-    const listingContextRows = buildListingContextRows(record);
-    if (listingContextRows.length > 0) {
-      ensureSpace(16 + tableRowHeight(doc, listingContextRows[0][1], LW, W, 8.5), "LISTING CONTEXT / سياق الإدراج");
-      y = sectionHead(doc, "LISTING CONTEXT / سياق الإدراج", X, y, W);
-      let contextShade = false;
-      for (const [label, value] of listingContextRows) {
-        ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "LISTING CONTEXT / سياق الإدراج");
-        y = tableRow(doc, label, value, X, y, LW, W, contextShade, 8.5);
-        contextShade = !contextShade;
+    /** Render a titled two-column section; skips empty values. */
+    const drawRowsSection = (title: string, rows: [string, string][]) => {
+      const visible = rows.filter(([, v]) => v && v.trim() && v !== "—");
+      if (visible.length === 0) return;
+      ensureSpace(16 + tableRowHeight(doc, visible[0][1], LW, W, 8.5), title);
+      y = sectionHead(doc, title, X, y, W);
+      let rowShade = false;
+      for (const [label, value] of visible) {
+        ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), title);
+        y = tableRow(doc, label, value, X, y, LW, W, rowShade, 8.5);
+        rowShade = !rowShade;
       }
       y += 10;
-    }
+    };
+
+    /** Render a titled list where each item occupies its own grey/white row. */
+    const drawListSection = (title: string, items: string[], sz = 8.5, color = BLACK) => {
+      const visible = items.map(i => (i || "").trim()).filter(Boolean);
+      if (visible.length === 0) return;
+      const rowH = (v: string) => Math.max(20, Math.ceil(bodyValueHeight(doc, v, W - 10, sz)) + 10);
+      ensureSpace(16 + rowH(visible[0]), title);
+      y = sectionHead(doc, title, X, y, W);
+      visible.forEach((item, i) => {
+        const h = rowH(item);
+        ensureSpace(h, title);
+        doc.save().rect(X, y, W, h).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, h).stroke().restore();
+        drawBodyValue(doc, item, X + 5, y + 5, W - 10, sz, color);
+        y += h;
+      });
+      y += 10;
+    };
+
+    // -- KEY DATA --------------------------------------------------------------
+    drawRowsSection("KEY DATA / البيانات الجوهرية", [
+      ["Category / الفئة", record.entityType ? (typeMap[record.entityType] || record.entityType) : "—"],
+      ["Citizenship / الجنسية", formatted.personal.nationality || "—"],
+      ["Date of Birth / تاريخ الميلاد", formatted.personal.dateOfBirth || "—"],
+      ["Place of Birth / مكان الميلاد", formatted.personal.placeOfBirth || "—"],
+      ["Gender / الجنس", formatted.personal.gender || "—"],
+      ["Listing Date / تاريخ الإدراج", formatted.listingDate || "—"],
+      ["Issuing Body / جهة الإصدار", record.issuingBody || "—"],
+    ]);
+
+    // -- LISTING CONTEXT -------------------------------------------------------
+    drawRowsSection("LISTING CONTEXT / سياق الإدراج",
+      formatted.listingContext
+        .filter(item => item.key !== "issuingBody")
+        .map(item => [`${item.labelEn} / ${item.labelAr}`, item.value] as [string, string]));
+
+    // -- ACTION TAKEN ----------------------------------------------------------
+    drawListSection("ACTION TAKEN / الإجراء المتخذ", formatted.actions.map(actionToText));
 
     // -- ALIASES ---------------------------------------------------------------
-    const altNames = record.alternativeNames as string[] | null;
-    if (altNames && altNames.length > 0) {
-      const clean = altNames
-        .map(n => n.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, "").trim())
-        .filter(n => n.length > 0);
-
-      if (clean.length > 0) {
-        const aLW = W / 2;
-        const latinNames  = clean.filter(n => !isAr(n));
-        const arabicNames = clean.filter(n => isAr(n));
-        const firstAliasH = Math.max(
-          18,
-          Math.ceil(Math.max(
-            latinNames?.[0] ? bodyValueHeight(doc, latinNames[0], aLW - 10, 8.5) : 0,
-            arabicNames?.[0] ? bodyValueHeight(doc, arabicNames[0], aLW - 10, 8.5) : 0,
-          )) + 10,
-        );
-        ensureSpace(32 + firstAliasH, "ALIASES");
-        y = sectionHead(doc, "ALIASES", X, y, W);
+    const aliasLatin = formatted.aliases.filter(n => !isAr(n));
+    const aliasArabic = formatted.aliases.filter(n => isAr(n));
+    if (formatted.aliases.length > 0 && (aliasLatin.length === 0 || aliasArabic.length === 0)) {
+      // Single-script aliases use full-width rows instead of an empty half column.
+      drawListSection("ALIASES / الأسماء البديلة", formatted.aliases);
+    } else if (formatted.aliases.length > 0) {
+      const aLW = W / 2;
+      const latinNames = aliasLatin;
+      const arabicNames = aliasArabic;
+      const maxR = Math.max(latinNames.length, arabicNames.length, 1);
+      const aliasRowH = (i: number) => Math.max(18, Math.ceil(Math.max(
+        latinNames[i] ? bodyValueHeight(doc, latinNames[i], aLW - 10, 8.5) : 0,
+        arabicNames[i] ? bodyValueHeight(doc, arabicNames[i], aLW - 10, 8.5) : 0,
+      )) + 10);
+      const drawAliasHeader = () => {
         doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
         doc.save().strokeColor(BORDER).lineWidth(0.3)
           .rect(X, y, W, 16).stroke()
           .moveTo(X + aLW, y).lineTo(X + aLW, y + 16).stroke()
           .restore();
         doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
-        enText(doc, "Aliases",                X + 5,       y + 4, aLW - 10);
-        enText(doc, "Native Character Names", X + aLW + 5, y + 4, aLW - 10);
+        enText(doc, "Aliases (Latin)", X + 5, y + 4, aLW - 10);
+        drawBidiText(doc, "الأسماء البديلة بالعربية", X + aLW + 5, y + 2, aLW - 10, 8, BLACK, BIDI_FONTS_BOLD, "right");
         y += 16;
-        const maxR = Math.max(latinNames.length, arabicNames.length, 1);
-
-        for (let i = 0; i < maxR; i++) {
-          const rh = Math.max(
-            18,
-            Math.ceil(Math.max(
-              latinNames[i] ? bodyValueHeight(doc, latinNames[i], aLW - 10, 8.5) : 0,
-              arabicNames[i] ? bodyValueHeight(doc, arabicNames[i], aLW - 10, 8.5) : 0,
-            )) + 10,
-          );
-          ensureSpace(rh, "ALIASES");
-          doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
-          doc.save().strokeColor(BORDER).lineWidth(0.3)
-            .rect(X, y, W, rh).stroke()
-            .moveTo(X + aLW, y).lineTo(X + aLW, y + rh).stroke()
-            .restore();
-
-          if (latinNames[i]) {
-            drawBodyValue(doc, latinNames[i], X + 5, y + 5, aLW - 10, 8.5, BLACK);
-          }
-          if (arabicNames[i]) {
-            drawBodyValue(doc, arabicNames[i], X + aLW + 5, y + 5, aLW - 10, 8.5, BLACK);
-          }
-          y += rh;
-        }
-        y += 10;
-      }
-    }
-
-    // -- ADDITIONAL INFORMATION (from rawNotes) ------------------------------
-    const parsed = parseRawNotesForPdf(record.rawNotes);
-
-    // Merge parsed fields with DB fields
-    const mergedNationality = record.nationality || parsed.nationality;
-    const mergedDob = record.dateOfBirth || parsed.dateOfBirth;
-    const mergedPob = record.placeOfBirth || parsed.placeOfBirth;
-    const mergedRef = record.referenceNumber || parsed.referenceNumber;
-    // Use notes field, or parsed notes from rawNotes
-    // If rawNotes doesn't contain structured keys (like "الجنسية:"), use it directly as notes
-    let mergedNotes = record.notes || parsed.notes;
-    if (!mergedNotes && record.rawNotes) {
-      const knownStructuredKeys = ['الجنسية:', 'تاريخ الميلاد:', 'مكان الميلاد:', 'أسماء بديلة:', 'الرقم المرجعي:', 'العنوان:', 'ملاحظات:'];
-      const isStructured = knownStructuredKeys.some(k => record.rawNotes!.includes(k));
-      if (!isStructured) {
-        // rawNotes is free-form text — use it directly as notes
-        mergedNotes = record.rawNotes;
-      }
-    }
-    const dbAltArr = (record.alternativeNames as string[] | null) || [];
-    const allAltNames = Array.from(new Set([...dbAltArr, ...parsed.alternativeNames]));
-
-    // Update KEY DATA rows with merged values
-    // (already rendered above — add ADDITIONAL INFO section below)
-
-    // -- ADDITIONAL INFORMATION ------------------------------------------------
-    const addlRows: [string, string][] = [
-      ["Action Taken", record.actionTaken || "—"],
-    ].filter(([, v]) => v && v !== "—") as [string, string][];
-
-    if (addlRows.length > 0) {
-      ensureSpace(16 + tableRowHeight(doc, addlRows[0][1], LW, W, 8.5), "ADDITIONAL INFORMATION");
-      y = sectionHead(doc, "ADDITIONAL INFORMATION", X, y, W);
-      let shade2 = false;
-      for (const [label, value] of addlRows) {
-        ensureSpace(tableRowHeight(doc, value, LW, W, 8.5), "ADDITIONAL INFORMATION");
-        y = tableRow(doc, label, value, X, y, LW, W, shade2, 8.5);
-        shade2 = !shade2;
+      };
+      ensureSpace(32 + aliasRowH(0), "ALIASES / الأسماء البديلة");
+      y = sectionHead(doc, "ALIASES / الأسماء البديلة", X, y, W);
+      drawAliasHeader();
+      for (let i = 0; i < maxR; i++) {
+        const rh = aliasRowH(i);
+        if (y + rh > CONTENT_BOTTOM) { startContinuationPage("ALIASES / الأسماء البديلة"); drawAliasHeader(); }
+        doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        doc.save().strokeColor(BORDER).lineWidth(0.3)
+          .rect(X, y, W, rh).stroke()
+          .moveTo(X + aLW, y).lineTo(X + aLW, y + rh).stroke()
+          .restore();
+        if (latinNames[i]) drawBodyValue(doc, latinNames[i], X + 5, y + 5, aLW - 10, 8.5, BLACK, "left");
+        if (arabicNames[i]) drawBodyValue(doc, arabicNames[i], X + aLW + 5, y + 5, aLW - 10, 8.5, BLACK, "right");
+        y += rh;
       }
       y += 10;
     }
 
-    // -- ALTERNATIVE NAMES (from rawNotes, merged) -----------------------------
-    if (allAltNames.length > 0 && (!altNames || altNames.length === 0)) {
-      // Only show this section if ALIASES section above was empty
-      const cleanAll = allAltNames
-        .map(n => n.replace(/[^\u0000-\u024F\u0600-\u06FF\u0750-\u077F\s]/g, "").trim())
-        .filter(n => n.length > 0);
-      if (cleanAll.length > 0) {
-        const aLW2 = W / 2;
-        const latinAll = cleanAll.filter(n => !isAr(n));
-        const arabicAll = cleanAll.filter(n => isAr(n));
-        const firstAliasH = Math.max(
-          18,
-          Math.ceil(Math.max(
-            latinAll?.[0] ? bodyValueHeight(doc, latinAll[0], aLW2 - 10, 8.5) : 0,
-            arabicAll?.[0] ? bodyValueHeight(doc, arabicAll[0], aLW2 - 10, 8.5) : 0,
-          )) + 10,
-        );
-        ensureSpace(32 + firstAliasH, "ALIASES");
-        y = sectionHead(doc, "ALIASES", X, y, W);
-        doc.save().rect(X, y, W, 16).fill(GRAY_HEAD).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, 16).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + 16).stroke().restore();
-        doc.font(FONT_EN_B).fontSize(8).fillColor(BLACK);
-        enText(doc, "Aliases", X + 5, y + 4, aLW2 - 10);
-        enText(doc, "Native Character Names", X + aLW2 + 5, y + 4, aLW2 - 10);
-        y += 16;
-        const maxR2 = Math.max(latinAll.length, arabicAll.length, 1);
-        for (let i = 0; i < maxR2; i++) {
-          const rh = Math.max(
-            18,
-            Math.ceil(Math.max(
-              latinAll[i] ? bodyValueHeight(doc, latinAll[i], aLW2 - 10, 8.5) : 0,
-              arabicAll[i] ? bodyValueHeight(doc, arabicAll[i], aLW2 - 10, 8.5) : 0,
-            )) + 10,
-          );
-          ensureSpace(rh, "ALIASES");
-          doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
-          doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rh).stroke().moveTo(X + aLW2, y).lineTo(X + aLW2, y + rh).stroke().restore();
-          if (latinAll[i]) drawBodyValue(doc, latinAll[i], X + 5, y + 5, aLW2 - 10, 8.5, BLACK);
-          if (arabicAll[i]) drawBodyValue(doc, arabicAll[i], X + aLW2 + 5, y + 5, aLW2 - 10, 8.5, BLACK);
-          y += rh;
+    // -- IDENTITY DOCUMENTS ----------------------------------------------------
+    if (formatted.identityDocuments.length > 0) {
+      const title = "IDENTITY DOCUMENTS / وثائق الهوية";
+      const cols = [
+        { en: "Document Type", ar: "نوع الوثيقة", w: W * 0.30 },
+        { en: "Number", ar: "الرقم", w: W * 0.22 },
+        { en: "Issuing Country", ar: "بلد الإصدار", w: W * 0.20 },
+        { en: "Details", ar: "تفاصيل", w: W * 0.28 },
+      ];
+      const cellsFor = (d: typeof formatted.identityDocuments[number]) => [
+        d.typeAr && d.typeAr !== d.type ? `${d.type}\n${d.typeAr}` : d.type,
+        d.number || "—",
+        d.country || "—",
+        [d.issueDate ? `Issued / الإصدار: ${d.issueDate}` : "", d.details || ""].filter(Boolean).join("\n") || "—",
+      ];
+      const docRowH = (cells: string[]) => Math.max(20, Math.ceil(Math.max(
+        ...cells.map((c, i) => bodyValueHeight(doc, c, cols[i].w - 10, 8)),
+      )) + 10);
+      const drawDocHeader = () => {
+        const hh = 26;
+        doc.save().rect(X, y, W, hh).fill(GRAY_HEAD).restore();
+        let cx = X;
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, hh).stroke();
+        for (const c of cols.slice(0, -1)) { cx += c.w; doc.moveTo(cx, y).lineTo(cx, y + hh).stroke(); }
+        doc.restore();
+        cx = X;
+        for (const c of cols) {
+          doc.font(FONT_EN_B).fontSize(7.5).fillColor(BLACK);
+          enText(doc, c.en, cx + 5, y + 3, c.w - 10);
+          drawBidiText(doc, c.ar, cx + 5, y + 12, c.w - 10, 7, GRAY_MID, BIDI_FONTS_BOLD, "left");
+          cx += c.w;
         }
-        y += 10;
-      }
+        y += hh;
+      };
+      const firstCells = cellsFor(formatted.identityDocuments[0]);
+      ensureSpace(16 + 26 + docRowH(firstCells), title);
+      y = sectionHead(doc, title, X, y, W);
+      drawDocHeader();
+      formatted.identityDocuments.forEach((d, i) => {
+        const cells = cellsFor(d);
+        const rh = docRowH(cells);
+        if (y + rh > CONTENT_BOTTOM) { startContinuationPage(title); drawDocHeader(); }
+        doc.save().rect(X, y, W, rh).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
+        let cx = X;
+        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rh).stroke();
+        for (const c of cols.slice(0, -1)) { cx += c.w; doc.moveTo(cx, y).lineTo(cx, y + rh).stroke(); }
+        doc.restore();
+        cx = X;
+        cells.forEach((cell, ci) => {
+          drawBodyValue(doc, cell, cx + 5, y + 5, cols[ci].w - 10, 8, BLACK, "left");
+          cx += cols[ci].w;
+        });
+        y += rh;
+      });
+      y += 10;
     }
 
     // -- ADDRESSES -------------------------------------------------------------
-    if (parsed.addresses.length > 0) {
-      const firstAddressH = Math.max(22, Math.ceil(bodyValueHeight(doc, parsed.addresses[0], W - 10, 8)) + 10);
-      ensureSpace(16 + firstAddressH, "ADDRESSES");
-      y = sectionHead(doc, `ADDRESSES (${parsed.addresses.length})`, X, y, W);
-      for (let i = 0; i < parsed.addresses.length; i++) {
-        const addr = parsed.addresses[i];
-        const addrH = Math.max(22, Math.ceil(bodyValueHeight(doc, addr, W - 10, 8)) + 10);
-        ensureSpace(addrH, "ADDRESSES");
-        doc.save().rect(X, y, W, addrH).fill(i % 2 === 0 ? GRAY_ROW : WHITE).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, addrH).stroke().restore();
-        drawBodyValue(doc, addr, X + 5, y + 5, W - 10, 8, BLACK);
-        y += addrH;
-      }
-      y += 14;
-    }
-    // -- NOTES ---------------------------------------------------------------------------
-    if (mergedNotes) {
-      const noteSz = 8.5;
-      const noteLines = mergedNotes.split(/\n+/).map(l => l.trim()).filter(Boolean);
-      if (y + 42 > CONTENT_BOTTOM) startContinuationPage("NOTES / ملاحظات");
-      else y = sectionHead(doc, "NOTES / ملاحظات", X, y, W);
+    drawListSection(`ADDRESSES (${formatted.addresses.length}) / العناوين`, formatted.addresses, 8);
 
-      for (let li = 0; li < noteLines.length; li++) {
-        const line = noteLines[li];
-        const rowH = Math.max(22, Math.ceil(bodyValueHeight(doc, line, W - 10, noteSz)) + 10);
-        ensureSpace(rowH, "NOTES / ملاحظات");
-        doc.save().rect(X, y, W, rowH).fill(li % 2 === 0 ? GRAY_ROW : WHITE).restore();
-        doc.save().strokeColor(BORDER).lineWidth(0.3).rect(X, y, W, rowH).stroke().restore();
-        drawBodyValue(doc, line, X + 5, y + 5, W - 10, noteSz, GRAY_MID);
-        y += rowH;
-      }
-      y += 14;
-    }
+    // -- ADDITIONAL INFORMATION ------------------------------------------------
+    drawRowsSection("ADDITIONAL INFORMATION / معلومات إضافية",
+      formatted.additionalInfo.map(item => [`${item.labelEn} / ${item.labelAr}`, item.value] as [string, string]));
+
+    // -- RELATIONSHIPS ---------------------------------------------------------
+    drawRowsSection("RELATIONSHIPS / الارتباطات",
+      formatted.relationships.map(r => [r.type || "Related / مرتبط", r.entity] as [string, string]));
+
+    // -- NOTES -----------------------------------------------------------------
+    drawListSection("NOTES / ملاحظات", formatted.notes, 8.5, GRAY_MID);
 
     // -- FOOTER -- apply the current footer style on every generated page.
     const pageRange = doc.bufferedPageRange();
